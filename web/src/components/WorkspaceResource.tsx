@@ -100,6 +100,8 @@ function ResourceSheet({ resource, title, fileKind, onClose, renderText, scopeTh
       stage = "fetch";
       const response = await fetch(url, { signal: controller.signal, redirect: "error" });
       if (!response.ok) throw new Error(`Asset HTTP ${response.status}`);
+      // PDFs render unsandboxed (WebKit draws nothing in a sandboxed frame), so only a real PDF may load there.
+      if (resolvedFileKind === "pdf" && response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !== "application/pdf") throw new Error("Asset is not a PDF");
       const content = (resolvedFileKind === "text" || resolvedFileKind === "html") ? await response.text() : null;
       if (content === null) await response.body?.cancel();
       if (live) setState({ kind: "ready", url, content });
@@ -119,7 +121,7 @@ function ResourceSheet({ resource, title, fileKind, onClose, renderText, scopeTh
       {state.kind === "ready" && <>
         {resolvedFileKind === "audio" && <audio src={state.url} preload="metadata" controls aria-label={title} className="mx-auto my-6 max-w-full" onError={(event) => failed(new Error(`Media error ${event.currentTarget.error?.code ?? "unknown"}`))} />}
         {resolvedFileKind === "video" && <video src={state.url} preload="metadata" controls className="mx-auto max-h-full max-w-full" onError={(event) => failed(new Error(`Media error ${event.currentTarget.error?.code ?? "unknown"}`))} />}
-        {(resolvedFileKind === "html" || resolvedFileKind === "pdf") && <iframe src={state.url} srcDoc={resolvedFileKind === "html" && state.content !== null ? themedWorkspacePage(state.content, dark) : undefined} title={title} sandbox="allow-scripts" className="size-full border-0 bg-white" onError={failed} />}
+        {(resolvedFileKind === "html" || resolvedFileKind === "pdf") && <iframe src={state.url} srcDoc={resolvedFileKind === "html" && state.content !== null ? themedWorkspacePage(state.content, dark) : undefined} title={title} sandbox={resolvedFileKind === "html" ? "allow-scripts" : undefined} className="size-full border-0 bg-white" onError={failed} />}
         {resolvedFileKind === "text" && state.content !== null && <div className="chat-file-content md mx-auto max-w-[760px] px-6 py-6 text-[14.5px] leading-[1.6]">{renderText ? renderText(state.content) : /\.csv$/i.test(title) ? <CsvPreview text={state.content} /> : <pre className="whitespace-pre-wrap break-words">{state.content}</pre>}</div>}
         {resolvedFileKind === "file" && <p className="p-6 text-center text-[14px] text-muted">Preview isn't available for this file.</p>}
       </>}

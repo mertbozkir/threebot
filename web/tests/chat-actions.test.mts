@@ -167,11 +167,20 @@ for (const kind of ["user", "bot"]) test(`${kind} photo attachment opens a fresh
 });
 
 test("file attachments preview PDFs and expose their current original file", async () => {
+  fetchResponse = () => new Response("%PDF-1.4", { status: 200, headers: { "content-type": "application/pdf" } });
   await renderAttachments([file]); await click(button("Open report.pdf"));
   const frame = document.querySelector('[role="dialog"] iframe');
   assert.equal(frame.getAttribute("src"), "/t3/assets/current-1");
-  assert.equal(frame.getAttribute("sandbox"), "allow-scripts");
+  // WebKit draws nothing for a PDF in a sandboxed frame.
+  assert.equal(frame.hasAttribute("sandbox"), false);
   assert.equal(document.querySelector('[role="dialog"] a').getAttribute("href"), "/t3/assets/current-1");
+});
+
+test("a PDF preview that is not served as a PDF never loads in the unsandboxed frame", async () => {
+  fetchResponse = () => new Response("<script>parent.x=1</script>", { status: 200, headers: { "content-type": "text/html" } });
+  await renderAttachments([file]); await click(button("Open report.pdf"));
+  assert.equal(document.querySelector('[role="dialog"] iframe'), null);
+  assert.match(document.querySelector('[role="alert"]').textContent, /Couldn't open/);
 });
 
 test("attachment failures retry with a new signed URL and unsupported formats keep a real original-file action", async () => {

@@ -41,11 +41,13 @@ const click = async (label) => { const element = button(label); assert.ok(elemen
 beforeEach(() => {
   calls = []; downloads = []; fetches = [];
   t3.call = async (tag, payload) => { assert.equal(tag, "assets.createUrl"); calls.push(payload.resource); return { relativeUrl: `/assets/current-${calls.length}` }; };
-  globalThis.fetch = async (url) => { fetches.push(url); return new Response("name,value\nexample,1", { status: 200 }); };
+  globalThis.fetch = async (url) => { fetches.push(url); return new Response("name,value\nexample,1", { status: 200, headers: servedType ? { "content-type": servedType } : {} }); };
   mock.method(window.HTMLAnchorElement.prototype, "click", function () { downloads.push({ href: this.getAttribute("href"), filename: this.download }); });
   host = document.createElement("main"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); document.body.replaceChildren(); mock.restoreAll(); });
+
+let servedType: string | undefined;
 
 test("CSV tile shows native-style basename, actual type/size and a signed table preview", async () => {
   await render([{ id: "csv", type: "file", name: "sample.csv", mimeType: "text/csv", sizeBytes: 27 }]);
@@ -110,6 +112,7 @@ test("unknown formats and invalid MIME retain full accessible names and a workin
 
 for (const [mimeType, selector, detail] of [["application/pdf", "iframe", "PDF"], ["video/mp4", "video", "MP4"], ["text/plain", "pre", "Text"], ["text/html", "iframe", "HTML"]]) {
   test(`extensionless ${mimeType} uses metadata for the actual resource viewer`, async () => {
+    servedType = mimeType;
     await render([{ id: "extensionless", name: "resource", mimeType, sizeBytes: 27 }]);
     assert.equal(button("Open resource").textContent, "resource" + detail + " · 27 B");
     await click("Open resource");
@@ -117,7 +120,7 @@ for (const [mimeType, selector, detail] of [["application/pdf", "iframe", "PDF"]
     assert.ok(preview);
     if (selector === "pre") assert.equal(preview.textContent, "name,value\nexample,1");
     else assert.equal(preview.getAttribute("src"), "/t3/assets/current-1");
-    if (selector === "iframe") assert.equal(preview.getAttribute("sandbox"), "allow-scripts");
+    if (selector === "iframe") assert.equal(preview.getAttribute("sandbox"), mimeType === "text/html" ? "allow-scripts" : null);
     assert.deepEqual(calls, [{ _tag: "attachment", attachmentId: "extensionless", disposition: "inline" }]);
   });
 }
