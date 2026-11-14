@@ -19,6 +19,7 @@ import { api, signOutTarget } from "../lib/api";
 import { t3http } from "../lib/t3";
 import type { ModelSelection, Settings } from "../lib/types";
 import { saveVoiceSettings } from "../lib/voiceChat";
+import { cloudTranscription, PROVIDER_LABELS, saveCloudTranscription, type CloudProvider, type CloudTranscription, type CloudTranscriptionPatch } from "../lib/cloudSpeech";
 import { useVoiceSettings, voiceLanguageOptions } from "./VoiceDock";
 
 const PANES = [
@@ -200,9 +201,49 @@ function General({ s, accountOnly = false }: { s: Settings; accountOnly?: boolea
           <Select label="Voice language" value={voiceSettings.lang} onChange={(lang) => saveVoiceSettings({ lang, voice: null })} options={voiceLanguageOptions()} />
         </Row>
         <T3DictationRow />
+        <CloudDictationRows />
       </Group>}
     </>
   );
+}
+
+/** Dictation through OpenAI or Gemini. The gateway keeps the key encrypted and never sends it back. */
+function CloudDictationRows() {
+  const [state, setState] = useState<CloudTranscription | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  // What the menu shows: a provider can be picked before its key is saved and it can be turned on.
+  const [picked, setPicked] = useState<CloudProvider | null | undefined>(undefined);
+  useEffect(() => { cloudTranscription().then(setState, () => setFailed(true)); }, []);
+  const apply = async (patch: CloudTranscriptionPatch) => {
+    setBusy(true);
+    try { setState(await saveCloudTranscription(patch)); return true; }
+    catch (error) { toast(error instanceof Error ? error.message : "Couldn't save"); return false; }
+    finally { setBusy(false); }
+  };
+  if (failed) return <Row title="Cloud transcription" desc="Couldn't load this setting from the gateway." />;
+  if (!state) return null;
+  const provider = picked === undefined ? state.provider : picked;
+  return <>
+    <Row title="Cloud transcription" desc="Dictation records here and the gateway sends the audio to the provider you pick. Better with mixed languages (it expects your voice language and English). Off keeps the browser or T3 Code.">
+      <Select<"" | CloudProvider> label="Cloud transcription" value={provider ?? ""} onChange={(value) => {
+        const next = value || null;
+        setPicked(next);
+        if (next === null || state.hasKey[next]) void apply({ provider: next });
+      }} options={[["", "Off"], ["openai", "OpenAI"], ["gemini", "Gemini"]]} />
+    </Row>
+    {provider && <Row title={`${PROVIDER_LABELS[provider]} API key`} desc={state.hasKey[provider] ? "Saved and encrypted on the gateway. Paste a new one to replace it." : `Paste a key from ${provider === "openai" ? "platform.openai.com" : "aistudio.google.com"} to turn this on.`}>
+      <form className="flex items-center gap-2" onSubmit={(event) => { event.preventDefault(); if (!key.trim()) return; void apply({ apiKey: { provider, value: key }, provider }).then((ok) => { if (ok) setKey(""); }); }}>
+        <input type="password" autoComplete="off" aria-label={`${PROVIDER_LABELS[provider]} API key`} value={key} onChange={(event) => setKey(event.target.value)} placeholder={state.hasKey[provider] ? "••••••••" : "API key"} className="h-8 w-44 rounded-lg border border-line bg-elevated px-2.5 text-[13px] outline-none" />
+        <button type="submit" disabled={busy || !key.trim()} className="text-[12.5px] text-muted hover:text-fg disabled:opacity-50">Save</button>
+        {state.hasKey[provider] && state.provider !== provider && <button type="button" disabled={busy} className="text-[12.5px] text-muted hover:text-fg" onClick={() => void apply({ apiKey: { provider, value: "" } })}>Remove</button>}
+      </form>
+    </Row>}
+    {provider && state.provider === provider && <Row title="Transcription model" desc={provider === "openai" ? "gpt-4o-transcribe and gpt-4o-mini-transcribe stop working on 26 February 2027." : "Gemini's model for recorded speech."}>
+      <Select label="Transcription model" value={state.models[provider]} onChange={(model) => void apply({ model })} options={state.options[provider].map((model) => [model, model] as const)} />
+    </Row>}
+  </>;
 }
 
 /** Only T3 Code servers that advertise transcription (0.1.8 nightly and later) offer this. */

@@ -1,5 +1,6 @@
 // Bot gateway: serves the web app, guards it with a password, proxies T3 Code,
 // and reads/writes the small JSON files that describe Bots. No database.
+import { createCloudTranscription, MAX_AUDIO_BYTES } from "./cloud-transcription.mts";
 import http, { type IncomingMessage, type OutgoingHttpHeaders, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
@@ -112,6 +113,7 @@ if (!botMcpToken) {
   await fs.writeFile(botMcpTokenPath, botMcpToken + "\n", { mode: 0o600 });
 }
 const vault = createVault({ file: cfg.vaultFile, keyFile: cfg.vaultKeyFile });
+const cloudTranscription = createCloudTranscription({ file: path.join(path.dirname(cfg.vaultKeyFile), "transcription.json"), keyFile: cfg.vaultKeyFile });
 // The Projects board, shared by the user and every Bot. APP_URL makes the links Bots share absolute.
 const projectsFile = path.join(appDir, "projects.json");
 const projects = createProjects({ file: projectsFile });
@@ -345,6 +347,16 @@ async function readBody(req: IncomingMessage, limit = 1 << 20): Promise<any> {
   }
 }
 /** Vault writes only accept JSON, so a cross-site form can't post to them. */
+async function readRaw(req: IncomingMessage, limit: number): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const c of req) {
+    size += c.length;
+    if (size > limit) throw Object.assign(new Error("body too large"), { status: 413 });
+    chunks.push(c);
+  }
+  return Buffer.concat(chunks);
+}
 function requireJson(req: IncomingMessage) {
   if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) throw Object.assign(new Error("content-type must be application/json"), { status: 415 });
 }
@@ -1140,6 +1152,17 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/telemetry" && req.method === "PUT") return send(res, 200, await telemetry.setEnabled((await readBody(req)).enabled));
     if (p === "/api/telemetry/preview" && req.method === "GET") return send(res, 200, await telemetry.preview(), { "cache-control": "no-store" });
     if (p === "/api/telemetry/reset-id" && req.method === "POST") return send(res, 200, await telemetry.resetId());
+    if (p === "/api/voice/cloud" && req.method === "GET") return send(res, 200, await cloudTranscription.status(), { "cache-control": "no-store" });
+    if (p === "/api/voice/cloud" && req.method === "PUT") {
+      requireJson(req);
+      return send(res, 200, await cloudTranscription.update(await readBody(req, 4096)), { "cache-control": "no-store" });
+    }
+    if (p === "/api/voice/cloud/transcribe" && req.method === "POST") {
+      // A non-form content type means a cross-site page can't send this without a CORS preflight.
+      if (!/^audio\/wav\b/i.test(String(req.headers["content-type"] ?? ""))) throw Object.assign(new Error("content-type must be audio/wav"), { status: 415 });
+      const text = await cloudTranscription.transcribe(await readRaw(req, MAX_AUDIO_BYTES), url.searchParams.get("lang") ?? "");
+      return send(res, 200, { text }, { "cache-control": "no-store" });
+    }
     if (p === "/api/settings" && req.method === "GET") return send(res, 200, await getSettings());
     if (p === "/api/settings" && req.method === "PUT") {
       const patch = await readBody(req);
