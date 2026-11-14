@@ -7,6 +7,7 @@ import { parseCsv } from "../lib/vaultCsv";
 import { useApp } from "../store";
 import { Modal } from "./ui";
 import { ImageViewer, useOpenImage, type ViewerImage } from "./ImageViewer";
+import PdfDocument from "./PdfDocument";
 
 export const WorkspaceFileContext = createContext<{ workspaceRoot: string; threadId: string | null; fromPath?: string; openFile: (path: string) => void } | null>(null);
 
@@ -51,7 +52,7 @@ function InlineImage({ buttonRef, src, alt, onOpen, onError, viewer }: { buttonR
   </>;
 }
 
-type ResourceState = { kind: "loading" } | { kind: "error" } | { kind: "ready"; url: string; content: string | null };
+type ResourceState = { kind: "loading" } | { kind: "error"; url?: string } | { kind: "ready"; url: string; content: string | null; pdf?: ArrayBuffer };
 
 /** Diagnose the failing boundary without logging signed URLs or file contents. */
 function reportResourceFailure(stage: string, resource: LibraryResource | null, fileKind: string, error: unknown) {
@@ -100,6 +101,11 @@ function ResourceSheet({ resource, title, fileKind, onClose, renderText, scopeTh
       stage = "fetch";
       const response = await fetch(url, { signal: controller.signal, redirect: "error" });
       if (!response.ok) throw new Error(`Asset HTTP ${response.status}`);
+      if (resolvedFileKind === "pdf") {
+        const pdf = await response.arrayBuffer();
+        if (live) setState({ kind: "ready", url, content: null, pdf });
+        return;
+      }
       const content = (resolvedFileKind === "text" || resolvedFileKind === "html") ? await response.text() : null;
       if (content === null) await response.body?.cancel();
       if (live) setState({ kind: "ready", url, content });
@@ -111,7 +117,9 @@ function ResourceSheet({ resource, title, fileKind, onClose, renderText, scopeTh
     return () => { live = false; controller.abort(); };
   // Resource identity is stable even when callers construct a fresh object on render.
   }, [resourceKey, resolvedFileKind, attempt, ownerThreadId]);
-  const failed = (error: unknown) => { reportResourceFailure("render", resource, resolvedFileKind, error); setState({ kind: "error" }); };
+  // The file loaded but couldn't be shown here: keep its link so it can still be opened.
+  const failed = (error: unknown) => { reportResourceFailure("render", resource, resolvedFileKind, error); setState((current) => ({ kind: "error", url: current.kind === "ready" ? current.url : undefined })); };
+  const original = state.kind === "ready" ? state.url : state.kind === "error" ? state.url : undefined;
   return <Modal backdropClassName={resolvedFileKind === "html" ? "workspace-page-backdrop" : undefined} backdropStyle={resolvedFileKind === "html" ? { left: sidebarWidth } : undefined} title={title} onClose={onClose} className={`workspace-resource-sheet h-[85dvh] w-full max-w-[1100px] ${resolvedFileKind === "html" ? "workspace-page-sheet" : ""} ${resolvedFileKind === "html" || /\.csv$/i.test(title) ? "workspace-document-sheet" : ""}`}>
     <div className="scroll-thin min-h-0 flex-1 overflow-auto">
       {state.kind === "loading" && <p role="status" className="p-6 text-center text-[14px] text-muted">Loading file…</p>}
@@ -119,12 +127,13 @@ function ResourceSheet({ resource, title, fileKind, onClose, renderText, scopeTh
       {state.kind === "ready" && <>
         {resolvedFileKind === "audio" && <audio src={state.url} preload="metadata" controls aria-label={title} className="mx-auto my-6 max-w-full" onError={(event) => failed(new Error(`Media error ${event.currentTarget.error?.code ?? "unknown"}`))} />}
         {resolvedFileKind === "video" && <video src={state.url} preload="metadata" controls className="mx-auto max-h-full max-w-full" onError={(event) => failed(new Error(`Media error ${event.currentTarget.error?.code ?? "unknown"}`))} />}
-        {(resolvedFileKind === "html" || resolvedFileKind === "pdf") && <iframe src={state.url} srcDoc={resolvedFileKind === "html" && state.content !== null ? themedWorkspacePage(state.content, dark) : undefined} title={title} sandbox="allow-scripts" className="size-full border-0 bg-white" onError={failed} />}
+        {resolvedFileKind === "pdf" && state.pdf && <PdfDocument data={state.pdf} title={title} onError={failed} />}
+        {resolvedFileKind === "html" && <iframe src={state.url} srcDoc={state.content !== null ? themedWorkspacePage(state.content, dark) : undefined} title={title} sandbox="allow-scripts" className="size-full border-0 bg-white" onError={failed} />}
         {resolvedFileKind === "text" && state.content !== null && <div className="chat-file-content md mx-auto max-w-[760px] px-6 py-6 text-[14.5px] leading-[1.6]">{renderText ? renderText(state.content) : /\.csv$/i.test(title) ? <CsvPreview text={state.content} /> : <pre className="whitespace-pre-wrap break-words">{state.content}</pre>}</div>}
         {resolvedFileKind === "file" && <p className="p-6 text-center text-[14px] text-muted">Preview isn't available for this file.</p>}
       </>}
     </div>
-    {state.kind === "ready" && <div className="shrink-0 border-t border-line px-4 py-3"><a href={state.url} target="_blank" rel="noreferrer" className="text-[13px] underline">Open original file</a></div>}
+    {original && <div className="shrink-0 border-t border-line px-4 py-3"><a href={original} target="_blank" rel="noreferrer" className="text-[13px] underline">Open original file</a></div>}
   </Modal>;
 }
 

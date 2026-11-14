@@ -108,11 +108,16 @@ test("unknown formats and invalid MIME retain full accessible names and a workin
   }
 });
 
-for (const [mimeType, selector, detail] of [["application/pdf", "iframe", "PDF"], ["video/mp4", "video", "MP4"], ["text/plain", "pre", "Text"], ["text/html", "iframe", "HTML"]]) {
+for (const [mimeType, selector, detail] of [["application/pdf", null, "PDF"], ["video/mp4", "video", "MP4"], ["text/plain", "pre", "Text"], ["text/html", "iframe", "HTML"]]) {
   test(`extensionless ${mimeType} uses metadata for the actual resource viewer`, async () => {
     await render([{ id: "extensionless", name: "resource", mimeType, sizeBytes: 27 }]);
     assert.equal(button("Open resource").textContent, "resource" + detail + " · 27 B");
     await click("Open resource");
+    if (selector === null) {
+      assert.equal(document.querySelector('[role="dialog"] iframe'), null, "pdf.js draws PDFs, not a frame");
+      assert.deepEqual(calls, [{ _tag: "attachment", attachmentId: "extensionless", disposition: "inline" }]);
+      return;
+    }
     const preview = document.querySelector('[role="dialog"] ' + selector);
     assert.ok(preview);
     if (selector === "pre") assert.equal(preview.textContent, "name,value\nexample,1");

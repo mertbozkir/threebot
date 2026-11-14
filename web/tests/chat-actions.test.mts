@@ -166,12 +166,14 @@ for (const kind of ["user", "bot"]) test(`${kind} photo attachment opens a fresh
   assert.match(host.textContent, /Keep this message mounted/);
 });
 
-test("file attachments preview PDFs and expose their current original file", async () => {
+test("file attachments draw PDFs with pdf.js and report a file that isn't a PDF", async () => {
   await renderAttachments([file]); await click(button("Open report.pdf"));
-  const frame = document.querySelector('[role="dialog"] iframe');
-  assert.equal(frame.getAttribute("src"), "/t3/assets/current-1");
-  assert.equal(frame.getAttribute("sandbox"), "allow-scripts");
-  assert.equal(document.querySelector('[role="dialog"] a').getAttribute("href"), "/t3/assets/current-1");
+  // pdf.js draws the PDF; a framed PDF stays blank in WebKit.
+  assert.equal(document.querySelector('[role="dialog"] iframe'), null);
+  assert.deepEqual(fetches, ["/t3/assets/current-1"]);
+  for (let tries = 0; tries < 50 && !document.querySelector('[role="alert"]'); tries++) await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+  assert.match(document.querySelector('[role="dialog"] [role="alert"]').textContent, /Couldn't open/);
+  assert.equal(document.querySelector('[role="dialog"] a').getAttribute("href"), "/t3/assets/current-1", "the original file stays one click away");
 });
 
 test("attachment failures retry with a new signed URL and unsupported formats keep a real original-file action", async () => {
