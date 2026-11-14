@@ -141,13 +141,18 @@ export function createCloudTranscription({ file, keyFile, fetch: request = globa
   return { status, update, transcribe, liveTarget };
 }
 
-/** 5 minutes of dictation, plus time to finish the last phrase. Stops a recording left on by mistake. */
-export const MAX_LIVE_MS = 5 * 60 * 1000 + 15_000;
+/** Stop accepting audio after five minutes; the final transcript has a separate grace period. */
+export const MAX_LIVE_MS = 5 * 60 * 1000;
+const MAX_LIVE_AUDIO_BYTES = 300 * 24_000 * 2;
+export const MAX_LIVE_FRAME_BYTES = 96_000;
+const MAX_LIVE_BUFFERED_BYTES = 1024 * 1024;
+export const LIVE_CONNECT_MS = 10_000;
 const FINISH_MS = 8_000;
 
 /** The parts of a WebSocket both ends use: `ws` on the server, a fake in tests. */
 export type LiveSocket = {
   readonly readyState: number;
+  readonly bufferedAmount: number;
   send(data: string): void;
   close(code?: number, reason?: string): void;
   on(event: "message", listener: (data: Buffer | ArrayBuffer | Buffer[], isBinary: boolean) => void): unknown;
@@ -177,48 +182,87 @@ export function liveSessionConfig(model: string, lang: string) {
 
 /**
  * Relays one dictation: the browser sends 24 kHz mono PCM16 frames and {"type":"stop"}; OpenAI's text
- * comes back as {"type":"delta"|"done", item, text} and {"type":"error", message}. The key stays here.
+ * comes back as {"type":"committed", item, previous}, {"type":"delta"|"done", item, text}
+ * and {"type":"error", message}. The key stays here.
  */
-export function relayLiveDictation(client: LiveSocket, upstream: LiveSocket, { model, lang, maxMs = MAX_LIVE_MS, finishMs = FINISH_MS, log = console }: { model: string; lang: string; maxMs?: number; finishMs?: number; log?: Pick<Console, "warn"> }) {
+export function relayLiveDictation(client: LiveSocket, upstream: LiveSocket, { model, lang, maxMs = MAX_LIVE_MS, finishMs = FINISH_MS, connectMs = LIVE_CONNECT_MS, log = console }: { model: string; lang: string; maxMs?: number; finishMs?: number; connectMs?: number; log?: Pick<Console, "warn"> }) {
   const pending = new Set<string>();
   const queued: string[] = [];
+  let queuedBytes = 0;
+  let audioBytes = 0;
   let stopping = false;
   let closed = false;
-  let audioSinceCommit = false;
+  let awaitingFlush = false;
+  let connectTimer: ReturnType<typeof setTimeout> | undefined;
   const toClient = (event: object) => { if (client.readyState === OPEN) client.send(JSON.stringify(event)); };
   const toUpstream = (event: object) => {
+    if (closed) return;
     const text = JSON.stringify(event);
-    if (upstream.readyState === OPEN) upstream.send(text); else queued.push(text);
+    const bytes = Buffer.byteLength(text);
+    if (queuedBytes + upstream.bufferedAmount + bytes > MAX_LIVE_BUFFERED_BYTES) {
+      toClient({ type: "error", message: "OpenAI's connection is too slow. Try dictation again." });
+      return finish(1013, "upstream backpressure");
+    }
+    if (upstream.readyState === OPEN) {
+      try { upstream.send(text); } catch { finish(1011, "upstream closed"); }
+    } else if (upstream.readyState === 0) { queued.push(text); queuedBytes += bytes; }
+    else finish(1011, "upstream closed");
   };
   const finish = (code = 1000, reason = "done") => {
     if (closed) return;
     closed = true;
     clearTimeout(cap);
     clearTimeout(finishTimer);
+    clearTimeout(connectTimer);
+    queued.length = 0;
+    queuedBytes = 0;
     if (upstream.readyState <= OPEN) upstream.close();
     if (client.readyState <= OPEN) client.close(code, reason);
   };
   let finishTimer: ReturnType<typeof setTimeout> | undefined;
-  const maybeFinish = () => { if (stopping && pending.size === 0 && !audioSinceCommit) finish(); };
+  const maybeFinish = () => { if (stopping && pending.size === 0 && !awaitingFlush) finish(); };
   const stop = () => {
-    if (stopping) return;
+    if (stopping || closed) return;
     stopping = true;
-    if (audioSinceCommit) toUpstream({ type: "input_audio_buffer.commit" });
+    clearTimeout(cap);
     finishTimer = setTimeout(() => finish(), finishMs);
+    if (audioBytes) {
+      awaitingFlush = true;
+      // Always commit the tail: a delayed VAD acknowledgement says nothing about newer audio.
+      toUpstream({ type: "input_audio_buffer.commit" });
+      // No more audio is accepted. Clearing the now-committed buffer provides a distinct flush
+      // acknowledgement, so an older VAD commit/completion cannot close the final turn early.
+      toUpstream({ type: "input_audio_buffer.clear" });
+    }
     maybeFinish();
   };
   const cap = setTimeout(() => { toClient({ type: "limit" }); stop(); }, maxMs);
+  if (upstream.readyState === 0) connectTimer = setTimeout(() => {
+    toClient({ type: "error", message: "Couldn't reach OpenAI." });
+    finish(1011, "upstream connection timeout");
+  }, connectMs);
 
   toUpstream(liveSessionConfig(model, lang));
-  upstream.on("open", () => { for (const text of queued.splice(0)) upstream.send(text); });
+  upstream.on("open", () => {
+    if (closed) return;
+    clearTimeout(connectTimer);
+    const messages = queued.splice(0);
+    queuedBytes = 0;
+    for (const text of messages) toUpstream(JSON.parse(text));
+  });
   upstream.on("message", (data) => {
-    let event: { type?: string; item_id?: string; delta?: string; transcript?: string; error?: { message?: string; code?: string } };
+    let event: { type?: string; item_id?: string; previous_item_id?: string | null; delta?: string; transcript?: string; error?: { message?: string; code?: string } };
     try { event = JSON.parse(String(data)); } catch { return; }
     switch (event.type) {
       case "input_audio_buffer.committed":
-        if (event.item_id) pending.add(event.item_id);
-        audioSinceCommit = false;
+        if (event.item_id) {
+          pending.add(event.item_id);
+          toClient({ type: "committed", item: event.item_id, previous: event.previous_item_id ?? null });
+        }
         return;
+      case "input_audio_buffer.cleared":
+        if (stopping) awaitingFlush = false;
+        return maybeFinish();
       case "conversation.item.input_audio_transcription.delta":
         if (event.item_id && typeof event.delta === "string") toClient({ type: "delta", item: event.item_id, text: event.delta });
         return;
@@ -231,7 +275,7 @@ export function relayLiveDictation(client: LiveSocket, upstream: LiveSocket, { m
         return maybeFinish();
       case "error":
         // Stopping right after a phrase was committed leaves nothing to commit; that's fine.
-        if (stopping && event.error?.code === "input_audio_buffer_commit_empty") { audioSinceCommit = false; return maybeFinish(); }
+        if (stopping && event.error?.code === "input_audio_buffer_commit_empty") return;
         log.warn(`live dictation: OpenAI error ${event.error?.code ?? ""}`);
         toClient({ type: "error", message: `OpenAI: ${String(event.error?.message ?? "error").slice(0, 300)}` });
         return finish(1011, "upstream error");
@@ -244,11 +288,13 @@ export function relayLiveDictation(client: LiveSocket, upstream: LiveSocket, { m
     if (closed) return;
     if (isBinary) {
       if (stopping) return;
-      const frame = Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data);
+      let frame = Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data);
       // An odd byte count can't be PCM16; drop it rather than shift every later sample.
-      if (!frame.length || frame.length % 2 || frame.length > 96_000) return;
-      audioSinceCommit = true;
+      if (!frame.length || frame.length % 2 || frame.length > MAX_LIVE_FRAME_BYTES) return;
+      frame = frame.subarray(0, MAX_LIVE_AUDIO_BYTES - audioBytes);
+      audioBytes += frame.length;
       toUpstream({ type: "input_audio_buffer.append", audio: frame.toString("base64") });
+      if (!closed && audioBytes === MAX_LIVE_AUDIO_BYTES) { toClient({ type: "limit" }); stop(); }
       return;
     }
     try { if (JSON.parse(String(data))?.type === "stop") stop(); } catch { /* ignore */ }

@@ -1,6 +1,6 @@
 // Bot gateway: serves the web app, guards it with a password, proxies T3 Code,
 // and reads/writes the small JSON files that describe Bots. No database.
-import { createCloudTranscription, MAX_AUDIO_BYTES, relayLiveDictation } from "./cloud-transcription.mts";
+import { createCloudTranscription, LIVE_CONNECT_MS, MAX_AUDIO_BYTES, MAX_LIVE_FRAME_BYTES, relayLiveDictation } from "./cloud-transcription.mts";
 import http, { type IncomingMessage, type OutgoingHttpHeaders, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
@@ -1315,6 +1315,7 @@ function proxyPreviewStream(req: IncomingMessage, socket: Duplex, head: Buffer, 
 
 // ---------- T3 WebSocket proxy ----------
 const wss = new WebSocketServer({ noServer: true });
+const liveWss = new WebSocketServer({ noServer: true, maxPayload: MAX_LIVE_FRAME_BYTES, perMessageDeflate: false });
 /** Dictation streamed to OpenAI: the browser talks to us, we talk to OpenAI with the saved key. */
 async function liveDictationUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, url: URL) {
   if (!(await authed(req).catch(() => false))) {
@@ -1325,8 +1326,8 @@ async function liveDictationUpgrade(req: IncomingMessage, socket: Duplex, head: 
   try { target = await cloudTranscription.liveTarget(); } catch (error) {
     socket.end(`HTTP/1.1 ${(error as HttpError).status ?? 500} Live dictation unavailable\r\nConnection: close\r\n\r\n`); return;
   }
-  wss.handleUpgrade(req, socket, head, (client) => {
-    const upstream = new WebSocket("wss://api.openai.com/v1/realtime?intent=transcription", { headers: { authorization: `Bearer ${target.key}` } });
+  liveWss.handleUpgrade(req, socket, head, (client) => {
+    const upstream = new WebSocket("wss://api.openai.com/v1/realtime?intent=transcription", { headers: { authorization: `Bearer ${target.key}` }, handshakeTimeout: LIVE_CONNECT_MS });
     relayLiveDictation(client, upstream, { model: target.model, lang: url.searchParams.get("lang") ?? "" });
   });
 }

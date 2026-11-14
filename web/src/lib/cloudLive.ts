@@ -1,6 +1,7 @@
 // Live dictation: the microphone streams to the gateway, which relays it to OpenAI with the saved
 // key, and the text comes back while you speak. Protocol: we send 24 kHz mono PCM16 frames and
-// {"type":"stop"}; the gateway sends {"type":"delta"|"done", item, text}, {"type":"limit"} and
+// {"type":"stop"}; the gateway sends {"type":"committed", item, previous},
+// {"type":"delta"|"done", item, text}, {"type":"limit"} and
 // {"type":"error", message}, then closes once the last phrase is written.
 
 export const LIVE_RATE = 24_000;
@@ -28,10 +29,25 @@ export function toPcm16(input: Float32Array, fromRate: number, toRate = LIVE_RAT
 export function liveTranscript() {
   const order: string[] = [];
   const text = new Map<string, string>();
+  const previous = new Map<string, string | null>();
+  const remember = (item: string) => { if (!order.includes(item)) order.push(item); };
   return {
-    delta(item: string, piece: string) { if (!text.has(item)) order.push(item); text.set(item, (text.get(item) ?? "") + piece); },
-    done(item: string, full: string) { if (!text.has(item)) order.push(item); text.set(item, full); },
-    toString() { return order.map((item) => text.get(item)!.trim()).filter(Boolean).join(" "); },
+    committed(item: string, before: string | null) { remember(item); previous.set(item, before); },
+    delta(item: string, piece: string) { remember(item); text.set(item, (text.get(item) ?? "") + piece); },
+    done(item: string, full: string) { remember(item); text.set(item, full); },
+    toString() {
+      const sorted: string[] = [];
+      const visited = new Set<string>();
+      const visit = (item: string) => {
+        if (visited.has(item)) return;
+        visited.add(item);
+        const before = previous.get(item);
+        if (before) visit(before);
+        sorted.push(item);
+      };
+      order.forEach(visit);
+      return sorted.map(item => text.get(item)?.trim()).filter(Boolean).join(" ");
+    },
   };
 }
 
@@ -92,9 +108,14 @@ export async function startLiveDictation({ lang, onText, onError, onLimit, onEnd
 
   socket.onopen = () => { for (const pcm of early.splice(0)) socket.send(pcm); };
   socket.onmessage = (message) => {
-    let event: { type?: string; item?: string; text?: string; message?: string };
+    let event: { type?: string; item?: string; previous?: string | null; text?: string; message?: string };
     try { event = JSON.parse(String(message.data)); } catch { return; }
-    if (event.type === "delta" && event.item) { transcript.delta(event.item, event.text ?? ""); onText(transcript.toString()); }
+    if (event.type === "committed" && event.item) {
+      transcript.committed(event.item, event.previous ?? null);
+      const spoken = transcript.toString();
+      if (spoken) onText(spoken);
+    }
+    else if (event.type === "delta" && event.item) { transcript.delta(event.item, event.text ?? ""); onText(transcript.toString()); }
     else if (event.type === "done" && event.item) { transcript.done(event.item, event.text ?? ""); onText(transcript.toString()); }
     else if (event.type === "limit") onLimit();
     else if (event.type === "error") { failed = true; onError(event.message ?? "Live dictation failed."); }

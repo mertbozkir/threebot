@@ -103,6 +103,7 @@ test("language hints and transcript parsing", () => {
 
 class FakeSocket extends EventEmitter {
   readyState = 1;
+  bufferedAmount = 0;
   sent: string[] = [];
   closedWith: number | undefined;
   send(data: string) { this.sent.push(data); }
@@ -110,6 +111,80 @@ class FakeSocket extends EventEmitter {
   events() { return this.sent.map((text) => JSON.parse(text)); }
 }
 const upstreamEvent = (socket: FakeSocket, event: object) => socket.emit("message", Buffer.from(JSON.stringify(event)), false);
+
+test("live relay: fast audio stops at five minutes, regardless of elapsed time", () => {
+  const client = new FakeSocket(), upstream = new FakeSocket();
+  relayLiveDictation(client, upstream, { model: "gpt-live-transcribe", lang: "en-US" });
+  try {
+    for (let i = 0; i < 200; i++) client.emit("message", Buffer.alloc(96_000), true);
+    const bytes = upstream.events().filter(event => event.type === "input_audio_buffer.append")
+      .reduce((sum, event) => sum + Buffer.byteLength(event.audio, "base64"), 0);
+    assert.equal(bytes, 14_400_000, "at most 300 seconds of 24 kHz mono PCM16");
+    assert.equal(client.events().filter(event => event.type === "limit").length, 1);
+  } finally { client.close(); }
+});
+
+test("live relay: a connecting or slow upstream cannot accumulate an unbounded queue", () => {
+  for (const connecting of [true, false]) {
+    const client = new FakeSocket(), upstream = new FakeSocket();
+    if (connecting) upstream.readyState = 0;
+    else upstream.bufferedAmount = 2 * 1024 * 1024;
+    relayLiveDictation(client, upstream, { model: "gpt-live-transcribe", lang: "en-US" });
+    try {
+      for (let i = 0; i < 20; i++) client.emit("message", Buffer.alloc(96_000), true);
+      assert.equal(client.closedWith, 1013, "stops a stalled relay before memory keeps growing");
+      assert.equal(upstream.readyState, 3);
+    } finally { client.close(); }
+  }
+});
+
+test("live relay: an upstream that never opens times out without sending queued audio later", async () => {
+  const client = new FakeSocket(), upstream = new FakeSocket();
+  upstream.readyState = 0;
+  relayLiveDictation(client, upstream, { model: "gpt-live-transcribe", lang: "en-US", connectMs: 10 });
+  client.emit("message", Buffer.alloc(4_800), true);
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal(client.closedWith, 1011);
+  upstream.readyState = 1;
+  upstream.emit("open");
+  assert.equal(upstream.sent.length, 0, "does not flush after shutdown");
+  upstream.close();
+});
+
+test("live relay: Stop preserves later audio across a delayed earlier commit", () => {
+  const client = new FakeSocket(), upstream = new FakeSocket();
+  relayLiveDictation(client, upstream, { model: "gpt-4o-transcribe", lang: "en-US" });
+  try {
+    client.emit("message", Buffer.alloc(4_800), true);
+    client.emit("message", Buffer.alloc(4_800), true);
+    upstreamEvent(upstream, { type: "input_audio_buffer.committed", item_id: "a" });
+    client.emit("message", Buffer.from('{"type":"stop"}'), false);
+    assert.equal(upstream.events().filter(event => event.type === "input_audio_buffer.commit").length, 1);
+    upstreamEvent(upstream, { type: "conversation.item.input_audio_transcription.completed", item_id: "a", transcript: "First phrase." });
+    assert.equal(client.closedWith, undefined, "earlier completion cannot end the final flush");
+    upstreamEvent(upstream, { type: "input_audio_buffer.committed", item_id: "b", previous_item_id: "a" });
+    upstreamEvent(upstream, { type: "input_audio_buffer.cleared" });
+    assert.equal(client.closedWith, undefined, "waits for the final phrase's text");
+    upstreamEvent(upstream, { type: "conversation.item.input_audio_transcription.completed", item_id: "b", transcript: "Last phrase." });
+    assert.equal(client.events().filter(event => event.type === "done").at(-1).text, "Last phrase.");
+    assert.equal(client.closedWith, 1000);
+  } finally { client.close(); }
+});
+
+test("live relay: committed item order reaches the browser before out-of-order transcripts", () => {
+  const client = new FakeSocket(), upstream = new FakeSocket();
+  relayLiveDictation(client, upstream, { model: "gpt-4o-transcribe", lang: "en-US" });
+  try {
+    upstreamEvent(upstream, { type: "input_audio_buffer.committed", item_id: "a", previous_item_id: null });
+    upstreamEvent(upstream, { type: "input_audio_buffer.committed", item_id: "b", previous_item_id: "a" });
+    upstreamEvent(upstream, { type: "conversation.item.input_audio_transcription.completed", item_id: "b", transcript: "Second." });
+    upstreamEvent(upstream, { type: "conversation.item.input_audio_transcription.completed", item_id: "a", transcript: "First." });
+    assert.deepEqual(client.events().slice(0, 2), [
+      { type: "committed", item: "a", previous: null },
+      { type: "committed", item: "b", previous: "a" },
+    ]);
+  } finally { client.close(); }
+});
 
 test("live sessions: the live model has no voice detection; the others pause-detect; both get language hints", () => {
   const live = liveSessionConfig("gpt-live-transcribe", "tr-TR").session.audio.input;
@@ -130,13 +205,14 @@ test("live relay: audio goes up as base64, text comes back, stop commits and clo
   assert.deepEqual(upstream.events().slice(1), [{ type: "input_audio_buffer.append", audio: Buffer.from([1, 0, 2, 0]).toString("base64") }]);
   upstreamEvent(upstream, { type: "conversation.item.input_audio_transcription.delta", item_id: "a", delta: "Merhaba" });
   client.emit("message", Buffer.from(JSON.stringify({ type: "stop" })), false);
-  assert.equal(upstream.events().at(-1).type, "input_audio_buffer.commit");
+  assert.deepEqual(upstream.events().slice(-2).map(event => event.type), ["input_audio_buffer.commit", "input_audio_buffer.clear"]);
   client.emit("message", Buffer.from([1, 0]), true);
   assert.equal(upstream.events().filter((event) => event.type === "input_audio_buffer.append").length, 1, "no audio after stop");
   upstreamEvent(upstream, { type: "input_audio_buffer.committed", item_id: "a" });
+  upstreamEvent(upstream, { type: "input_audio_buffer.cleared" });
   assert.equal(client.closedWith, undefined, "waits for the committed phrase");
   upstreamEvent(upstream, { type: "conversation.item.input_audio_transcription.completed", item_id: "a", transcript: "Merhaba dünya" });
-  assert.deepEqual(client.events(), [{ type: "delta", item: "a", text: "Merhaba" }, { type: "done", item: "a", text: "Merhaba dünya" }]);
+  assert.deepEqual(client.events(), [{ type: "delta", item: "a", text: "Merhaba" }, { type: "committed", item: "a", previous: null }, { type: "done", item: "a", text: "Merhaba dünya" }]);
   assert.equal(client.closedWith, 1000);
   assert.equal(upstream.readyState, 3);
 });
@@ -150,6 +226,8 @@ test("live relay: an empty final commit is fine, OpenAI errors reach the browser
   client.emit("message", Buffer.from([0, 0]), true);
   client.emit("message", Buffer.from(JSON.stringify({ type: "stop" })), false);
   upstreamEvent(upstream, { type: "error", error: { code: "input_audio_buffer_commit_empty", message: "buffer too small" } });
+  assert.equal(client.closedWith, undefined, "an empty commit still waits for the flush acknowledgement");
+  upstreamEvent(upstream, { type: "input_audio_buffer.cleared" });
   assert.equal(client.closedWith, 1000);
   assert.ok(!client.events().some((event) => event.type === "error"));
 
@@ -164,6 +242,6 @@ test("live relay: an empty final commit is fine, OpenAI errors reach the browser
   client3.emit("message", Buffer.from([0, 0]), true);
   await new Promise((resolve) => setTimeout(resolve, 80));
   assert.equal(client3.events()[0].type, "limit");
-  assert.equal(upstream3.events().at(-1).type, "input_audio_buffer.commit");
+  assert.ok(upstream3.events().some(event => event.type === "input_audio_buffer.commit"));
   assert.equal(client3.closedWith, 1000, "closes even if OpenAI never answers");
 });
