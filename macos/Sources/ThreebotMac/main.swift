@@ -98,7 +98,7 @@ private let notificationScript = """
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate,
-    WKScriptMessageHandlerWithReply, UNUserNotificationCenterDelegate {
+    WKScriptMessageHandlerWithReply, UNUserNotificationCenterDelegate, NSWindowDelegate {
     private let gateway = gatewayURL()
     private var notificationPermission = "default"
     // Page notification id -> macOS request identifier. A reused tag replaces the earlier entry.
@@ -106,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     private var window: NSWindow!
     private var webView: WKWebView!
     private var popupViews: [ObjectIdentifier: WKWebView] = [:]
+    private var documentWindows: [NSWindow] = []
     private var downloads: [ObjectIdentifier: WKDownload] = [:]
     private var downloadDestinations: [ObjectIdentifier: (temporary: URL, chosen: URL)] = [:]
     private var userNavigation = false
@@ -352,8 +353,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             // Same-site popup destinations reuse the visible app window.
             if (popup || action.targetFrame == nil) && !action.shouldPerformDownload {
                 decisionHandler(.cancel)
-                userNavigation = true
-                webView.load(action.request)
+                if url.path.hasPrefix("/t3/") {
+                    // Files (PDFs, images) get their own closable window; the app page stays put.
+                    openDocumentWindow(action.request)
+                } else {
+                    userNavigation = true
+                    webView.load(action.request)
+                }
                 if popup { disposePopup(view) }
             } else {
                 decisionHandler(action.shouldPerformDownload ? .download : .allow)
@@ -380,6 +386,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     func webViewDidClose(_ view: WKWebView) { disposePopup(view) }
+
+    // Voice input and voice chat need the microphone; only the Threebot page gets it, and never the camera.
+    func webView(_ view: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo,
+                 type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        let port = origin.port == 0 ? (origin.protocol == "https" ? 443 : 80) : origin.port
+        let gatewayPort = gateway.port ?? (gateway.scheme == "https" ? 443 : 80)
+        let sameOrigin = view === webView && origin.protocol == gateway.scheme
+            && unbracketed(origin.host) == unbracketed(gateway.host ?? "") && port == gatewayPort
+        decisionHandler(sameOrigin && type == .microphone ? .grant : .deny)
+    }
+
+    private func openDocumentWindow(_ request: URLRequest) {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = webView.configuration.websiteDataStore
+        let view = WKWebView(frame: .zero, configuration: configuration)
+        view.navigationDelegate = self
+        view.uiDelegate = self
+        let document = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 1000),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        document.title = request.url?.lastPathComponent ?? "Threebot"
+        document.isReleasedWhenClosed = false
+        document.contentView = view
+        document.delegate = self
+        document.cascadeTopLeft(from: NSPoint(x: window.frame.minX + 40, y: window.frame.maxY - 40))
+        documentWindows.append(document)
+        view.load(request)
+        document.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let closing = notification.object as? NSWindow else { return }
+        (closing.contentView as? WKWebView)?.stopLoading()
+        documentWindows.removeAll { $0 === closing }
+    }
 
     func webView(_ view: WKWebView, didFinish navigation: WKNavigation!) {
         if view === webView { userNavigation = false }

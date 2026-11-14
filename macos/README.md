@@ -27,7 +27,16 @@ to use it outside the checkout.
 
 The Run action uses the same script. Cmd-R reloads, Cmd-plus and Cmd-minus zoom,
 and Cmd-0 restores actual size. File inputs open a Mac chooser, and downloads ask
-where to save. External links open in the default browser.
+where to save. External links open in the default browser. Files the page opens
+in a new tab, such as Open original file, get their own window; close it with
+Cmd-W.
+
+## Microphone
+
+Voice input and voice chat use the microphone. macOS asks the first time; only
+the Threebot page can use it, never the camera. If voice input says
+"not-allowed", turn on Threebot in System Settings › Privacy & Security ›
+Microphone.
 
 ## Notifications
 
