@@ -10,8 +10,9 @@ export type Provider = (typeof PROVIDERS)[number];
 
 /** Models each provider offers for recorded speech. The first is the default. */
 export const MODELS: Record<Provider, readonly string[]> = {
-  // gpt-4o-transcribe and gpt-4o-mini-transcribe shut down on 2027-02-26.
-  openai: ["gpt-transcribe", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"],
+  // Dictation streams to OpenAI live (see liveSession). gpt-4o-transcribe writes a phrase at each pause;
+  // gpt-live-transcribe writes word by word. gpt-4o-transcribe and gpt-4o-mini-transcribe shut down on 2027-02-26.
+  openai: ["gpt-4o-transcribe", "gpt-live-transcribe", "gpt-transcribe", "gpt-4o-mini-transcribe"],
   gemini: ["gemini-3.5-transcribe"],
 };
 
@@ -104,9 +105,11 @@ export function createCloudTranscription({ file, keyFile, fetch: request = globa
       if (provider === "openai") {
         const form = new FormData();
         form.set("file", new Blob([new Uint8Array(wav)], { type: "audio/wav" }), "speech.wav");
-        form.set("model", model);
         // gpt-transcribe takes a list of possible languages; the older models take one.
-        if (model === "gpt-transcribe") for (const code of hints.iso) form.append("languages[]", code);
+        // gpt-live-transcribe only streams; its file counterpart is gpt-transcribe.
+        const fileModel = model === "gpt-live-transcribe" ? "gpt-transcribe" : model;
+        form.set("model", fileModel);
+        if (fileModel === "gpt-transcribe") for (const code of hints.iso) form.append("languages[]", code);
         form.set("response_format", "json");
         res = await request("https://api.openai.com/v1/audio/transcriptions", { method: "POST", headers: { authorization: `Bearer ${key}` }, body: form, signal });
       } else {
@@ -127,7 +130,131 @@ export function createCloudTranscription({ file, keyFile, fetch: request = globa
     return extractText(provider, data);
   }
 
-  return { status, update, transcribe };
+  /** The key and model for a live session, or why there can't be one. */
+  async function liveTarget() {
+    const stored = await load();
+    if (stored.provider !== "openai" || !stored.keys.openai) throw httpError(409, "Live dictation needs OpenAI. Turn it on in Settings › Beta.");
+    return { key: stored.keys.openai, model: stored.models.openai };
+  }
+
+  return { status, update, transcribe, liveTarget };
+}
+
+/** 5 minutes of dictation, plus time to finish the last phrase. Stops a recording left on by mistake. */
+export const MAX_LIVE_MS = 5 * 60 * 1000 + 15_000;
+const FINISH_MS = 8_000;
+
+/** The parts of a WebSocket both ends use: `ws` on the server, a fake in tests. */
+export type LiveSocket = {
+  readonly readyState: number;
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
+  on(event: "message", listener: (data: Buffer | ArrayBuffer | Buffer[], isBinary: boolean) => void): unknown;
+  on(event: "close", listener: () => void): unknown;
+  on(event: "error", listener: (error: Error) => void): unknown;
+  on(event: "open", listener: () => void): unknown;
+};
+const OPEN = 1;
+
+/** OpenAI's session settings: the live model has no voice detection, so the session commits once at the end. */
+export function liveSessionConfig(model: string, lang: string) {
+  const hints = languageHints(lang);
+  const live = model === "gpt-live-transcribe";
+  const transcription = live || model === "gpt-transcribe"
+    ? { model, ...(hints.iso.length ? { languages: hints.iso } : {}) }
+    : { model, ...(hints.iso[0] ? { language: hints.iso[0] } : {}) };
+  return {
+    type: "session.update",
+    session: { type: "transcription", audio: { input: {
+      format: { type: "audio/pcm", rate: 24_000 },
+      transcription,
+      noise_reduction: { type: "near_field" },
+      turn_detection: live ? null : { type: "server_vad", silence_duration_ms: 500 },
+    } } },
+  };
+}
+
+/**
+ * Relays one dictation: the browser sends 24 kHz mono PCM16 frames and {"type":"stop"}; OpenAI's text
+ * comes back as {"type":"delta"|"done", item, text} and {"type":"error", message}. The key stays here.
+ */
+export function relayLiveDictation(client: LiveSocket, upstream: LiveSocket, { model, lang, maxMs = MAX_LIVE_MS, finishMs = FINISH_MS, log = console }: { model: string; lang: string; maxMs?: number; finishMs?: number; log?: Pick<Console, "warn"> }) {
+  const pending = new Set<string>();
+  const queued: string[] = [];
+  let stopping = false;
+  let closed = false;
+  let audioSinceCommit = false;
+  const toClient = (event: object) => { if (client.readyState === OPEN) client.send(JSON.stringify(event)); };
+  const toUpstream = (event: object) => {
+    const text = JSON.stringify(event);
+    if (upstream.readyState === OPEN) upstream.send(text); else queued.push(text);
+  };
+  const finish = (code = 1000, reason = "done") => {
+    if (closed) return;
+    closed = true;
+    clearTimeout(cap);
+    clearTimeout(finishTimer);
+    if (upstream.readyState <= OPEN) upstream.close();
+    if (client.readyState <= OPEN) client.close(code, reason);
+  };
+  let finishTimer: ReturnType<typeof setTimeout> | undefined;
+  const maybeFinish = () => { if (stopping && pending.size === 0 && !audioSinceCommit) finish(); };
+  const stop = () => {
+    if (stopping) return;
+    stopping = true;
+    if (audioSinceCommit) toUpstream({ type: "input_audio_buffer.commit" });
+    finishTimer = setTimeout(() => finish(), finishMs);
+    maybeFinish();
+  };
+  const cap = setTimeout(() => { toClient({ type: "limit" }); stop(); }, maxMs);
+
+  toUpstream(liveSessionConfig(model, lang));
+  upstream.on("open", () => { for (const text of queued.splice(0)) upstream.send(text); });
+  upstream.on("message", (data) => {
+    let event: { type?: string; item_id?: string; delta?: string; transcript?: string; error?: { message?: string; code?: string } };
+    try { event = JSON.parse(String(data)); } catch { return; }
+    switch (event.type) {
+      case "input_audio_buffer.committed":
+        if (event.item_id) pending.add(event.item_id);
+        audioSinceCommit = false;
+        return;
+      case "conversation.item.input_audio_transcription.delta":
+        if (event.item_id && typeof event.delta === "string") toClient({ type: "delta", item: event.item_id, text: event.delta });
+        return;
+      case "conversation.item.input_audio_transcription.completed":
+        if (event.item_id) { pending.delete(event.item_id); toClient({ type: "done", item: event.item_id, text: String(event.transcript ?? "") }); }
+        return maybeFinish();
+      case "conversation.item.input_audio_transcription.failed":
+        if (event.item_id) pending.delete(event.item_id);
+        toClient({ type: "error", message: "OpenAI couldn't transcribe part of that." });
+        return maybeFinish();
+      case "error":
+        // Stopping right after a phrase was committed leaves nothing to commit; that's fine.
+        if (stopping && event.error?.code === "input_audio_buffer_commit_empty") { audioSinceCommit = false; return maybeFinish(); }
+        log.warn(`live dictation: OpenAI error ${event.error?.code ?? ""}`);
+        toClient({ type: "error", message: `OpenAI: ${String(event.error?.message ?? "error").slice(0, 300)}` });
+        return finish(1011, "upstream error");
+    }
+  });
+  upstream.on("error", () => { toClient({ type: "error", message: "Couldn't reach OpenAI." }); finish(1011, "upstream error"); });
+  upstream.on("close", () => finish(stopping ? 1000 : 1011, stopping ? "done" : "upstream closed"));
+
+  client.on("message", (data, isBinary) => {
+    if (closed) return;
+    if (isBinary) {
+      if (stopping) return;
+      const frame = Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data);
+      // An odd byte count can't be PCM16; drop it rather than shift every later sample.
+      if (!frame.length || frame.length % 2 || frame.length > 96_000) return;
+      audioSinceCommit = true;
+      toUpstream({ type: "input_audio_buffer.append", audio: frame.toString("base64") });
+      return;
+    }
+    try { if (JSON.parse(String(data))?.type === "stop") stop(); } catch { /* ignore */ }
+  });
+  client.on("close", () => finish());
+  client.on("error", () => finish());
+  return { stop };
 }
 
 const label = (provider: Provider) => provider === "openai" ? "OpenAI" : "Gemini";

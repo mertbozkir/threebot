@@ -206,6 +206,11 @@ function General({ s, accountOnly = false }: { s: Settings; accountOnly?: boolea
   );
 }
 
+const MODEL_LABELS: Record<string, string> = {
+  "gpt-4o-transcribe": "gpt-4o-transcribe (recommended)",
+  "gpt-live-transcribe": "gpt-live-transcribe (word by word)",
+};
+
 /** Dictation through OpenAI or Gemini. The gateway keeps the key encrypted and never sends it back. */
 function CloudDictationRows() {
   const [state, setState] = useState<CloudTranscription | null>(null);
@@ -239,8 +244,8 @@ function CloudDictationRows() {
         {state.hasKey[provider] && state.provider !== provider && <button type="button" disabled={busy} className="text-[12.5px] text-muted hover:text-fg" onClick={() => void apply({ apiKey: { provider, value: "" } })}>Remove</button>}
       </form>
     </Row>}
-    {provider && state.provider === provider && <Row title="Transcription model" desc={provider === "openai" ? "gpt-4o-transcribe and gpt-4o-mini-transcribe stop working on 26 February 2027." : "Gemini's model for recorded speech."}>
-      <Select label="Transcription model" value={state.models[provider]} onChange={(model) => void apply({ model })} options={state.options[provider].map((model) => [model, model] as const)} />
+    {provider && state.provider === provider && <Row title="Transcription model" desc={provider === "openai" ? "Text appears while you speak: gpt-4o-transcribe writes each phrase when you pause, gpt-live-transcribe writes word by word. gpt-4o-transcribe and gpt-4o-mini-transcribe stop working on 26 February 2027." : "Gemini writes the text when you stop recording."}>
+      <Select label="Transcription model" value={state.models[provider]} onChange={(model) => void apply({ model })} options={state.options[provider].map((model) => [model, MODEL_LABELS[model] ?? model] as const)} />
     </Row>}
   </>;
 }

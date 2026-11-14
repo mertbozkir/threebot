@@ -1,6 +1,6 @@
 // Bot gateway: serves the web app, guards it with a password, proxies T3 Code,
 // and reads/writes the small JSON files that describe Bots. No database.
-import { createCloudTranscription, MAX_AUDIO_BYTES } from "./cloud-transcription.mts";
+import { createCloudTranscription, MAX_AUDIO_BYTES, relayLiveDictation } from "./cloud-transcription.mts";
 import http, { type IncomingMessage, type OutgoingHttpHeaders, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
@@ -1315,6 +1315,22 @@ function proxyPreviewStream(req: IncomingMessage, socket: Duplex, head: Buffer, 
 
 // ---------- T3 WebSocket proxy ----------
 const wss = new WebSocketServer({ noServer: true });
+/** Dictation streamed to OpenAI: the browser talks to us, we talk to OpenAI with the saved key. */
+async function liveDictationUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, url: URL) {
+  if (!(await authed(req).catch(() => false))) {
+    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+    return socket.destroy();
+  }
+  let target: { key: string; model: string };
+  try { target = await cloudTranscription.liveTarget(); } catch (error) {
+    socket.end(`HTTP/1.1 ${(error as HttpError).status ?? 500} Live dictation unavailable\r\nConnection: close\r\n\r\n`); return;
+  }
+  wss.handleUpgrade(req, socket, head, (client) => {
+    const upstream = new WebSocket("wss://api.openai.com/v1/realtime?intent=transcription", { headers: { authorization: `Bearer ${target.key}` } });
+    relayLiveDictation(client, upstream, { model: target.model, lang: url.searchParams.get("lang") ?? "" });
+  });
+}
+
 server.on("upgrade", async (req, socket, head) => {
   upgraded.add(socket as Socket);
   socket.once("close", () => upgraded.delete(socket as Socket));
@@ -1329,6 +1345,7 @@ server.on("upgrade", async (req, socket, head) => {
     return socket.destroy();
   }
   const url = new URL(req.url!, "http://x");
+  if (url.pathname === "/api/voice/cloud/live") return liveDictationUpgrade(req, socket, head, url);
   let route;
   try { route = environmentPath(url.pathname); } catch { socket.end("HTTP/1.1 400 Bad Request\r\n\r\n"); return; }
   const isPreview = route.path === "/api/preview-stream/ws";

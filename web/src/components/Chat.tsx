@@ -20,6 +20,7 @@ import { useVoiceSettings, VoiceDock, voiceChatSupported } from "./VoiceDock";
 import { requestMicrophone, readVoiceSettings, voiceLang } from "../lib/voiceChat";
 import { appendDictation, dictationEngine, speechLanguage, speechProblem, speechStatus, SPEECH_SAMPLE_RATE, startRecording, transcribe, type Recording } from "../lib/t3Speech";
 import { cloudTranscription, PROVIDER_LABELS, transcribeInCloud } from "../lib/cloudSpeech";
+import { startLiveDictation, type LiveDictation } from "../lib/cloudLive";
 import { isExecutorUrl } from "../lib/executor";
 import { IconButton, Spinner } from "./ui";
 import { ActivityAvatar, useReportLocalActivity } from "./ActivityAvatar";
@@ -550,6 +551,7 @@ function Composer({ bot, threadId, working, embedded, inVoiceChat, onVoiceChat }
     const currentLang = voiceLang(readVoiceSettings());
     // A hosted model (OpenAI or Gemini), when chosen in Settings, wins over the browser and T3.
     const cloud = globalThis.MediaRecorder ? await cloudTranscription().catch(() => null) : null;
+    if (cloud?.provider === "openai") return dictateLive(currentLang);
     if (cloud?.provider) return dictateRecorded(currentLang, (pcm) => transcribeInCloud(pcm, currentLang), `${PROVIDER_LABELS[cloud.provider]} couldn't transcribe that.`);
     const engine = dictationEngine({ browser: !!SR, t3: t3Voice && !!globalThis.MediaRecorder, preferT3: readVoiceSettings().t3 });
     if (!engine) return toast("Voice input isn't available in this browser");
@@ -606,6 +608,42 @@ function Composer({ bot, threadId, working, embedded, inVoiceChat, onVoiceChat }
       activeRec.current = null;
       toast(`Could not start voice input: ${e?.message || e}`);
     }
+  };
+
+  /** Streams to OpenAI through the gateway; the text lands in the draft while you speak. */
+  const dictateLive = async (currentLang: string) => {
+    const problem = await requestMicrophone();
+    if (problem) return toast(problem);
+    if (!mounted.current) return;
+    const target = draft;
+    const baseText = target.getSnapshot().text;
+    let written = baseText;
+    let session: LiveDictation | null = null;
+    const handle = {
+      // The second tap stops the microphone; the last phrase still arrives, so wait for it.
+      stop: () => { setTranscribing(true); session?.stop(); },
+      abort: () => session?.cancel(),
+    };
+    try {
+      session = await startLiveDictation({
+        lang: currentLang,
+        onText: (spoken) => {
+          // Typing or sending while dictating wins: stop rather than overwrite the draft.
+          if (target.getSnapshot().text !== written) { session?.stop(); return; }
+          written = appendDictation(baseText, spoken, currentLang);
+          target.setText(written);
+        },
+        onError: (message) => toast(message),
+        onLimit: () => toast("Dictation stopped after 5 minutes."),
+        onEnd: () => {
+          if (activeRec.current === handle) activeRec.current = null;
+          if (mounted.current) { setListening(false); setTranscribing(false); }
+        },
+      });
+    } catch (e: any) { return toast(`Could not start voice input: ${e?.message || e}`); }
+    if (!mounted.current) return session.cancel();
+    activeRec.current = handle;
+    setListening(true);
   };
 
   /** Records until the second tap, then T3 Code or a hosted model transcribes it and the text joins the draft. */
