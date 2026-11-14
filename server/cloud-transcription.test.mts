@@ -4,7 +4,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
-import { createCloudTranscription, extractText, languageHints, liveSessionConfig, relayLiveDictation } from "./cloud-transcription.mts";
+import { createCloudTranscription, extractText, languageHints, liveSessionConfig, providerMessage, relayLiveDictation } from "./cloud-transcription.mts";
 
 type Call = { url: string; init: RequestInit };
 
@@ -87,9 +87,11 @@ test("Gemini gets inline WAV with language codes and returns the joined text", a
 });
 
 test("provider failures become readable errors without the key", async () => {
-  const { service } = await setup(() => Response.json({ error: { message: "Incorrect API key provided" } }, { status: 401 }));
+  const { service } = await setup(() => Response.json({ error: { message: "Incorrect API key provided: sk-wrong. You can find your API key at https://platform.openai.com/account/api-keys." } }, { status: 401 }));
   await service.update({ apiKey: { provider: "openai", value: "sk-wrong" }, provider: "openai" });
-  await assert.rejects(service.transcribe(wav, "en-US"), (e: any) => e.status === 502 && /rejected the API key: Incorrect API key/.test(e.message) && !/sk-wrong/.test(e.message));
+  // OpenAI quotes the (masked) key it got; none of it reaches the browser or the log.
+  await assert.rejects(service.transcribe(wav, "en-US"), (e: any) => e.status === 502 && /rejected the API key: Incorrect API key provided: \[key\]\. You can find/.test(e.message) && !/sk-/.test(e.message));
+  assert.equal(providerMessage("API key not valid: AIzaSyD-abc_123. Please pass a valid API key."), "API key not valid: [key]. Please pass a valid API key.");
   await assert.rejects(service.transcribe(Buffer.alloc(0), "en-US"), (e: any) => e.status === 413);
 });
 

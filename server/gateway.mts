@@ -346,7 +346,6 @@ async function readBody(req: IncomingMessage, limit = 1 << 20): Promise<any> {
     throw Object.assign(new Error("invalid JSON body"), { status: 400 });
   }
 }
-/** Vault writes only accept JSON, so a cross-site form can't post to them. */
 async function readRaw(req: IncomingMessage, limit: number): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -357,6 +356,7 @@ async function readRaw(req: IncomingMessage, limit: number): Promise<Buffer> {
   }
   return Buffer.concat(chunks);
 }
+/** Vault writes only accept JSON, so a cross-site form can't post to them. */
 function requireJson(req: IncomingMessage) {
   if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) throw Object.assign(new Error("content-type must be application/json"), { status: 415 });
 }

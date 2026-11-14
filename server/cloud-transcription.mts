@@ -96,7 +96,7 @@ export function createCloudTranscription({ file, keyFile, fetch: request = globa
     const stored = await load();
     const provider = stored.provider;
     const key = provider ? stored.keys[provider] : undefined;
-    if (!provider || !key) throw httpError(409, "Cloud transcription is off. Turn it on in Settings › Voice.");
+    if (!provider || !key) throw httpError(409, "Cloud transcription is off. Turn it on in Settings › Beta.");
     if (!wav.length || wav.length > MAX_AUDIO_BYTES) throw httpError(413, "That recording is too long to transcribe.");
     const hints = languageHints(lang);
     const signal = AbortSignal.timeout(TIMEOUT_MS);
@@ -277,7 +277,7 @@ export function relayLiveDictation(client: LiveSocket, upstream: LiveSocket, { m
         // Stopping right after a phrase was committed leaves nothing to commit; that's fine.
         if (stopping && event.error?.code === "input_audio_buffer_commit_empty") return;
         log.warn(`live dictation: OpenAI error ${event.error?.code ?? ""}`);
-        toClient({ type: "error", message: `OpenAI: ${String(event.error?.message ?? "error").slice(0, 300)}` });
+        toClient({ type: "error", message: `OpenAI: ${providerMessage(event.error?.message) || "error"}` });
         return finish(1011, "upstream error");
     }
   });
@@ -306,10 +306,17 @@ export function relayLiveDictation(client: LiveSocket, upstream: LiveSocket, { m
 
 const label = (provider: Provider) => provider === "openai" ? "OpenAI" : "Gemini";
 
-/** The provider's own message helps ("invalid API key", "quota exceeded"); it never contains the key. */
+/**
+ * Provider messages help ("invalid API key", "quota exceeded"), but OpenAI quotes a masked key in some.
+ * They reach the browser and the log, so drop anything shaped like a key first.
+ */
+export function providerMessage(message: unknown) {
+  return typeof message === "string" ? message.replace(/\b(sk-|AIza)(?:[\w*.-]*[\w*])?/g, "[key]").slice(0, 300) : "";
+}
+
 function providerError(provider: Provider, status: number, data: unknown) {
-  const message = (data as { error?: { message?: unknown } } | null)?.error?.message;
-  const detail = typeof message === "string" ? `: ${message.slice(0, 300)}` : "";
+  const message = providerMessage((data as { error?: { message?: unknown } } | null)?.error?.message);
+  const detail = message ? `: ${message}` : "";
   if (status === 401 || status === 403) return `${label(provider)} rejected the API key${detail}`;
   if (status === 429) return `${label(provider)} is rate limiting or out of quota${detail}`;
   return `${label(provider)} couldn't transcribe that (HTTP ${status})${detail}`;
