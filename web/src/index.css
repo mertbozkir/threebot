@@ -288,7 +288,8 @@ button {
 /* Stacked bubbles join with tighter corners, like iMessage. */
 .stack-left > .bubble:not(:first-child) { border-top-left-radius: 6px; }
 .stack-left > .bubble:not(:last-child) { border-bottom-left-radius: 6px; }
-.bubble { max-width: min(80%, 560px); }
+/* Long URLs and tokens wrap inside the bubble instead of running past it. */
+.bubble { max-width: min(80%, 560px); overflow-wrap: anywhere; }
 
 /* Shared surfaces follow the supplied phone references; desktop keeps its three columns. */
 [data-palette="midnight"] { --accent: #5b55e0; --pill: #4f46c8; --pill-fg: #ffffff; --pill-soft: #4f46c81a; --bubble-user: #4f46c8; }
