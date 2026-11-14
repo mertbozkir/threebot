@@ -76,7 +76,7 @@ export function isClearCommand(text: string) {
 }
 
 // "- ", "* ", "+ ", "1. ", "1) ", optionally followed by a task box, after any indent.
-const LIST_ITEM = /^([ \t]*)(?:([-*+])|(\d{1,9})([.)]))[ \t]+(?:\[[ xX]\][ \t]+)?/;
+const LIST_ITEM = /^([ \t]*)(?:([-*+])|(\d{1,9})([.)]))[ \t]+(?:\[[ xX]\](?:[ \t]+|$))?/;
 
 /**
  * A new line inside a Markdown list item: continue the list, or end it on an empty item.

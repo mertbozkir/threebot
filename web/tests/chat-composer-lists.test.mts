@@ -31,6 +31,7 @@ test("a new line on an empty item ends the list", () => {
   assert.equal(enter("- milk\n- "), "- milk\n");
   assert.equal(enter("1. a\n2. "), "1. a\n");
   assert.equal(enter("- [ ] "), "");
+  assert.equal(enter("- [ ]"), "", "a task box with no space after it is still empty");
 });
 
 test("a new line in the middle of an item splits it", () => {
