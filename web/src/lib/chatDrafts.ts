@@ -1,7 +1,6 @@
 import { requestNotificationPermission, sendMessage, toast, uploadAttachment, type Attachment } from "../store";
 import { T3RpcError, uuid } from "./t3";
 import { parseReply, withReply } from "./reply";
-import { normalizeComposerLists } from "./chatBehavior";
 import type { Bot } from "./types";
 
 type DraftAttachment = { state: "uploading" | "ready"; attachment: Attachment };
@@ -141,7 +140,7 @@ class ChatDraft {
   submit = () => {
     const { text, attachments, sending, replyTo, fresh } = this.snapshot;
     if (sending || (!text.trim() && !attachments.length) || attachments.some((item) => item.state === "uploading")) return;
-    const message: UnsentMessage = { id: this.retryMessageId ?? uuid(), text: withReply(normalizeComposerLists(text), replyTo), attachments: attachments.map((item) => item.attachment), ...(fresh ? { fresh: true } : {}) };
+    const message: UnsentMessage = { id: this.retryMessageId ?? uuid(), text: withReply(text, replyTo), attachments: attachments.map((item) => item.attachment), ...(fresh ? { fresh: true } : {}) };
     this.retryMessageId = null;
     this.inFlight = message;
     // Sending is what makes "tell me when this finishes" a reasonable question.

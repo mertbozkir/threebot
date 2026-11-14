@@ -48,11 +48,10 @@ function RichPre(props: ComponentPropsWithoutRef<"pre"> & ExtraProps) {
 
 /** Drop-in message renderer. Caller retains workspace/link/image navigation. */
 export function RichMarkdown({ children, bots = [], components, urlTransform }: RichMarkdownProps) {
-  const content = typeof children === "string" ? children.replace(/^(\s*)•\s+/gm, "$1- ") : children;
   return <ReactMarkdown
     skipHtml
     remarkPlugins={[remarkGfm, [remarkMath, { backslashDelimiters: true }], [remarkBotLinks, { bots }]]}
     components={{ ...components, pre: RichPre, code: RichCode }}
     urlTransform={urlTransform ?? ((url) => parseThreadLink(url) || url.startsWith("bot:") ? url : defaultUrlTransform(url))}
-  >{content}</ReactMarkdown>;
+  >{children}</ReactMarkdown>;
 }

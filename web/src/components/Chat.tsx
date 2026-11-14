@@ -1,4 +1,4 @@
-import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { memo, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import clsx from "clsx";
 import { defaultUrlTransform } from "react-markdown";
 import { ArrowDown, ArrowUp, AudioLines, Camera, ChevronLeft, Eraser, Globe, FileText, Folder, Image, MessageCircle, Mic, Monitor, PanelRight, Plus, Square, X } from "lucide-react";
@@ -32,7 +32,7 @@ import { getTriggerDisplayModelName } from "../lib/modelTraits";
 import { canStartSideChat, parseSideCommand } from "../lib/sideChats";
 import { SideChatPill, SideChatSheet } from "./SideChat";
 import type { Bot } from "../lib/types";
-import { composerFocusBehavior, handleComposerBeforeInput, handleComposerListKey, isClearCommand, MOBILE_CHAT_QUERY, normalizeComposerLists, scrollTextareaToCursor, splitBubbles, takeAttachmentFiles, transformComposerInput } from "../lib/chatBehavior";
+import { composerFocusBehavior, isClearCommand, listNewline, MOBILE_CHAT_QUERY, splitBubbles, takeAttachmentFiles } from "../lib/chatBehavior";
 import { chatDraft } from "../lib/chatDrafts";
 import { parseReply, replyLabel, withReply } from "../lib/reply";
 import { activeWork, messageCommand, useRuntimeWork, useWorkCommand } from "../lib/runtimeApi";
@@ -467,15 +467,13 @@ function AttachmentPicker({ mobile, open, onToggle, onClose, onFiles, onSideChat
 function Composer({ bot, threadId, working, embedded, inVoiceChat, onVoiceChat }: { bot: Bot; threadId: string | null; working: boolean; embedded: boolean; inVoiceChat: boolean; onVoiceChat: () => void }) {
   const draft = chatDraft(bot, threadId);
   const { text, attachments: atts, sending, failed, replyTo, fresh } = useSyncExternalStore(draft.subscribe, draft.getSnapshot, draft.getSnapshot);
-  const lastKeyDownHandledTime = useRef(0);
   const { setText, addFiles, setReply, setFresh } = draft;
   const specialSend = useWorkCommand(`${threadId}:${text}:${atts.map(item => item.attachment.id).join(",")}`);
   const submitGoal = async () => {
     if (!threadId || sending || atts.some(item => item.state === "uploading")) return;
     const saved = draft.getSnapshot();
-    const normalized = normalizeComposerLists(saved.text.trim());
-    const goal = /^\/goal(?:\s|$)/.test(normalized) && !saved.attachments.length;
-    const command = messageCommand(threadId, goal ? normalized : withReply(normalized, saved.replyTo), working, { attachments: saved.attachments.flatMap(item => item.state === "ready" ? [{ type: item.attachment.type, id: item.attachment.id, name: item.attachment.name, mimeType: item.attachment.mimeType, sizeBytes: item.attachment.sizeBytes }] : []) });
+    const goal = /^\/goal(?:\s|$)/.test(saved.text.trim()) && !saved.attachments.length;
+    const command = messageCommand(threadId, goal ? saved.text.trim() : withReply(saved.text.trim(), saved.replyTo), working, { attachments: saved.attachments.flatMap(item => item.state === "ready" ? [{ type: item.attachment.type, id: item.attachment.id, name: item.attachment.name, mimeType: item.attachment.mimeType, sizeBytes: item.attachment.sizeBytes }] : []) });
     await specialSend.send(command, () => {
       if (draft.getSnapshot().text === saved.text) setText("");
       if (draft.getSnapshot().replyTo === saved.replyTo) setReply(null);
@@ -519,94 +517,13 @@ function Composer({ bot, threadId, working, embedded, inVoiceChat, onVoiceChat }
     focus.onPointerDown(ta.current);
     ta.current.focus({ preventScroll: true });
   }, [replying, focus]);
-  const pendingCursor = useRef<number | null>(null);
-  const pendingCursorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const applyCursor = useCallback((pos: number) => {
-    pendingCursor.current = pos;
-    if (pendingCursorTimer.current) clearTimeout(pendingCursorTimer.current);
-    pendingCursorTimer.current = setTimeout(() => {
-      pendingCursor.current = null;
-    }, 150);
-
-    const el = ta.current;
-    if (!el) return;
-    el.setSelectionRange(pos, pos);
-    scrollTextareaToCursor(el);
-    setTimeout(() => {
-      if (ta.current && pendingCursor.current === pos) {
-        ta.current.setSelectionRange(pos, pos);
-        scrollTextareaToCursor(ta.current);
-      }
-    }, 0);
-    setTimeout(() => {
-      if (ta.current && pendingCursor.current === pos) {
-        ta.current.setSelectionRange(pos, pos);
-        scrollTextareaToCursor(ta.current);
-      }
-    }, 25);
-    setTimeout(() => {
-      if (ta.current && pendingCursor.current === pos) {
-        ta.current.setSelectionRange(pos, pos);
-        scrollTextareaToCursor(ta.current);
-      }
-    }, 60);
-    requestAnimationFrame(() => {
-      if (ta.current && pendingCursor.current === pos) {
-        ta.current.setSelectionRange(pos, pos);
-        scrollTextareaToCursor(ta.current);
-      }
-    });
-  }, []);
-
-  useEffect(() => {
-    const onSelectionChange = () => {
-      const el = ta.current;
-      if (!el || document.activeElement !== el) return;
-      if (pendingCursor.current !== null) {
-        const expected = pendingCursor.current;
-        if (el.selectionStart !== expected || el.selectionEnd !== expected) {
-          el.setSelectionRange(expected, expected);
-        }
-      }
-    };
-    document.addEventListener("selectionchange", onSelectionChange);
-    return () => {
-      document.removeEventListener("selectionchange", onSelectionChange);
-      if (pendingCursorTimer.current) clearTimeout(pendingCursorTimer.current);
-    };
-  }, []);
-
   useEffect(() => {
     const el = ta.current;
     if (el) {
-      el.style.height = "auto";
-      const nextHeight = Math.min(el.scrollHeight, 120);
-      el.style.height = `${nextHeight}px`;
-      el.style.overflowY = el.scrollHeight > 120 ? "auto" : "hidden";
-      if (pendingCursor.current !== null) {
-        const pos = pendingCursor.current;
-        el.setSelectionRange(pos, pos);
-      }
-      scrollTextareaToCursor(el);
+      el.style.height = "0px";
+      el.style.height = Math.min(el.scrollHeight, 120) + "px";
     }
   }, [text, draft]);
-
-  useEffect(() => {
-    const el = ta.current;
-    if (!el) return;
-    const onBeforeInput = (e: InputEvent) => {
-      if (Date.now() - lastKeyDownHandledTime.current < 50) return;
-      if (e.data && e.data !== " " && e.data !== "\u00A0") {
-        pendingCursor.current = null;
-      }
-      handleComposerBeforeInput(e as any, mobile, setText, applyCursor);
-    };
-    el.addEventListener("beforeinput", onBeforeInput as EventListener);
-    return () => {
-      el.removeEventListener("beforeinput", onBeforeInput as EventListener);
-    };
-  }, [mobile, setText, applyCursor]);
 
   const t3Voice = useApp((s) => s.runtimeFeatures.voiceTranscription);
   const [transcribing, setTranscribing] = useState(false);
@@ -774,35 +691,14 @@ function Composer({ bot, threadId, working, embedded, inVoiceChat, onVoiceChat }
               ref={ta}
               readOnly={mobile}
               enterKeyHint={mobile ? "enter" : undefined}
-              onPointerDown={(e) => {
-                pendingCursor.current = null;
-                focus.onPointerDown(e.currentTarget);
-              }}
+              onPointerDown={(e) => focus.onPointerDown(e.currentTarget)}
               onPointerCancel={(e) => focus.onPointerCancel(e.currentTarget)}
-              onClick={(e) => {
-                pendingCursor.current = null;
-                focus.onClick(e.currentTarget);
-              }}
+              onClick={(e) => focus.onClick(e.currentTarget)}
               onFocus={(e) => focus.onFocus(e.currentTarget)}
-              onBlur={(e) => {
-                pendingCursor.current = null;
-                focus.onBlur(e.currentTarget);
-              }}
+              onBlur={(e) => focus.onBlur(e.currentTarget)}
               value={text}
               rows={1}
-              onChange={(e) => {
-                const target = e.currentTarget;
-                const val = target.value;
-                const sel = target.selectionStart;
-                const transformed = transformComposerInput(val, sel);
-                if (transformed) {
-                  target.value = transformed.value;
-                  applyCursor(transformed.cursor);
-                  setText(transformed.value);
-                } else {
-                  setText(val);
-                }
-              }}
+              onChange={(e) => setText(e.target.value)}
               onPaste={(e) => {
                 const files = Array.from(e.clipboardData.files);
                 if (files.length) {
@@ -816,12 +712,21 @@ function Composer({ bot, threadId, working, embedded, inVoiceChat, onVoiceChat }
                   submit();
                   return;
                 }
-                if (handleComposerListKey(e, mobile, setText, applyCursor)) {
-                  lastKeyDownHandledTime.current = Date.now();
-                  return;
-                }
-                if (e.key !== "Shift" && e.key !== "Control" && e.key !== "Alt" && e.key !== "Meta") {
-                  pendingCursor.current = null;
+                // A new line in a list item continues the list: Shift+Enter on desktop, Enter on mobile.
+                if (e.key === "Enter" && (mobile || e.shiftKey) && !e.nativeEvent.isComposing) {
+                  const el = e.currentTarget;
+                  const edit = listNewline(el.value, el.selectionStart, el.selectionEnd);
+                  if (edit) {
+                    e.preventDefault();
+                    el.setSelectionRange(edit.from, edit.to);
+                    // insertText keeps the browser's undo history and fires onChange; fall back where it is missing.
+                    const done = edit.insert ? document.execCommand?.("insertText", false, edit.insert) : document.execCommand?.("delete");
+                    if (!done) {
+                      el.setRangeText(edit.insert, edit.from, edit.to, "end");
+                      setText(el.value);
+                    }
+                    return;
+                  }
                 }
                 if (!mobile && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();

@@ -396,49 +396,27 @@ test("mobile Enter key does not submit, while Ctrl+Enter or desktop Enter submit
   assert.equal(textarea().value, "");
 });
 
-test("list continuation on desktop Shift+Enter and mobile Enter", async () => {
-  // Mobile: Space converts '-' to '    • ' and Enter continues lists
+test("a new line in a list item continues the list: Enter on mobile, Shift+Enter on desktop", async () => {
+  const enter = (shiftKey = false) => runtime.act(async () => {
+    textarea().selectionStart = textarea().selectionEnd = textarea().value.length;
+    textarea().dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", shiftKey, bubbles: true, cancelable: true }));
+  });
   await render();
-  await type("-");
-  textarea().selectionStart = textarea().selectionEnd = textarea().value.length;
-  await runtime.act(async () => {
-    textarea().dispatchEvent(new window.KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }));
-  });
-  assert.equal(textarea().value, "    • ");
+  await type("- milk");
+  await enter();
+  assert.equal(textarea().value, "- milk\n- ");
+  await enter();
+  assert.equal(textarea().value, "- milk\n", "Enter on an empty item ends the list");
+  assert.equal(sends.length, 0);
 
-  await type("    • First item");
-  textarea().selectionStart = textarea().selectionEnd = textarea().value.length;
-  await runtime.act(async () => {
-    textarea().dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
-  });
-  assert.equal(textarea().value, "    • First item\n    • ");
-
-  // Mobile: Enter on empty item exits list
-  await runtime.act(async () => {
-    textarea().dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
-  });
-  assert.equal(textarea().value, "    • First item\n");
-
-  // Desktop: Space on '1.' indents with 4 spaces
   window.happyDOM.setWindowSize({ width: 1200, height: 900 });
   await render({ key: "desktop-lists" });
-  await type("1.");
-  textarea().selectionStart = textarea().selectionEnd = textarea().value.length;
-  await runtime.act(async () => {
-    textarea().dispatchEvent(new window.KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }));
-  });
-  assert.equal(textarea().value, "    1. ");
-
-  await type("    1. First step");
-  textarea().selectionStart = textarea().selectionEnd = textarea().value.length;
-  await runtime.act(async () => {
-    textarea().dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true, cancelable: true }));
-  });
-  assert.equal(textarea().value, "    1. First step\n    2. ");
-
-  // Desktop: Backspace on empty marker removes it
-  await runtime.act(async () => {
-    textarea().dispatchEvent(new window.KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
-  });
-  assert.equal(textarea().value, "    1. First step\n");
+  await type("1. First step");
+  await enter(true);
+  assert.equal(textarea().value, "1. First step\n2. ");
+  await type("1. First step\n2. Second");
+  await enter();
+  assert.equal(sends.length, 1, "plain Enter still sends on desktop");
+  assert.equal(sends[0].command.text, "1. First step\n2. Second", "the message is the Markdown as typed");
+  await runtime.act(async () => sends[0].resolve({ sequence: 1 }));
 });

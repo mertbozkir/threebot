@@ -37,7 +37,7 @@
 /* Writing row: one pill, like sending a message. */
 .composer-shell { border-radius: 28px; }
 .composer-controls { flex-wrap: nowrap; align-items: flex-end; gap: 6px; padding: 7px; }
-.composer-controls textarea { order: 0; flex: 1 1 auto; padding-inline: 8px; overflow-wrap: anywhere; word-break: break-word; }
+.composer-controls textarea { order: 0; flex: 1 1 auto; padding-inline: 8px; overflow-wrap: anywhere; }
 .composer-controls .composer-dictate { margin-left: 0; }
 .composer-controls > button, .composer-controls button[aria-label="Composer actions"] { border-radius: 999px; }
 
@@ -83,7 +83,7 @@
   .chat-view [data-message-body="plain"].bubble { border-bottom-right-radius: 8px; }
   .composer-shell { border-radius: 28px; }
   .composer-controls { padding: 6px; gap: 6px; }
-  .composer-controls textarea { min-height: 36px; padding: 6px 8px; font-size: 16px; overflow-wrap: anywhere; word-break: break-word; }
+  .composer-controls textarea { min-height: 36px; padding: 6px 8px; font-size: 16px; }
   .composer-controls > button,
   .composer-controls button[aria-label="Composer actions"],
   .composer-controls .composer-stop > button { width: 36px; height: 36px; }
