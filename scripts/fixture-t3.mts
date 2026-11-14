@@ -24,6 +24,24 @@ export const SAMPLES: FixtureSample[] = [
 export const SAMPLE_IMAGE = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#128c87"/><text x="40" y="190" font-size="40" fill="white">Generic fixture image</text></svg>');
 export const SAMPLE_BARS = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="480" height="600"><rect width="480" height="600" fill="#f4f1ea"/><rect x="60" y="340" width="90" height="200" fill="#e0703a"/><rect x="195" y="200" width="90" height="340" fill="#3a7be0"/><rect x="330" y="110" width="90" height="430" fill="#7a4fd0"/><text x="60" y="80" font-size="34" fill="#222">Generic sample bars</text></svg>');
 export const SAMPLE_TEXT = Buffer.from('Generic attachment. No user data.\n');
+/** A two-page PDF with generic text, built with exact xref offsets so pdf.js reads it without repairs. */
+export const SAMPLE_PDF = (() => {
+  const page = (n: number) => `BT /F1 28 Tf 72 700 Td (Generic sample report, page ${n}) Tj ET 72 520 m 540 520 l S BT /F1 14 Tf 72 480 Td (Disposable fixture data only.) Tj ET`;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 6 0 R >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 7 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    ...[1, 2].map((n) => `<< /Length ${page(n).length} >>\nstream\n${page(n)}\nendstream`),
+  ];
+  let body = '%PDF-1.4\n';
+  const offsets = objects.map((object, i) => { const at = body.length; body += `${i + 1} 0 obj\n${object}\nendobj\n`; return at; });
+  const xref = body.length;
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((at) => `${String(at).padStart(10, '0')} 00000 n \n`).join('')}`;
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(body, 'latin1');
+})();
 export const samplesFor = (scenario: string): FixtureSample[] => scenario === 'landing' ? LANDING_SAMPLES : scenario === 'avatars' ? AVATAR_SAMPLES : scenario === 'activity' ? ACTIVITY_SAMPLES : SAMPLES;
 
 /** A machine the fake T3 links (T3's peer links), with threads reached only through its forwarded tools. */
@@ -73,6 +91,7 @@ export async function startFakeT3(root: string, port = 0, { scenario = 'basic', 
     ['library/photo.svg', { mimeType: 'image/svg+xml', bytes: SAMPLE_IMAGE }],
     ['library/bars.svg', { mimeType: 'image/svg+xml', bytes: SAMPLE_BARS }],
     ['library/notes.txt', { mimeType: 'text/plain', bytes: SAMPLE_TEXT }],
+    ['library/report.pdf', { mimeType: 'application/pdf', bytes: SAMPLE_PDF }],
     ['library/audio.wav', { mimeType: 'audio/wav', bytes: (() => { const data=Buffer.alloc(44+1600);data.write('RIFF');data.writeUInt32LE(data.length-8,4);data.write('WAVEfmt ',8);data.writeUInt32LE(16,16);data.writeUInt16LE(1,20);data.writeUInt16LE(1,22);data.writeUInt32LE(8000,24);data.writeUInt32LE(16000,28);data.writeUInt16LE(2,32);data.writeUInt16LE(16,34);data.write('data',36);data.writeUInt32LE(1600,40);return data; })() }],
   ] : []);
   const items = new Map<string, FixtureItem[]>(threads.map((thread) => [thread.id, [

@@ -633,7 +633,7 @@ test('Library fixture supplies real signed resources and rejects missing files a
     const bots = (await fixture.request('/api/bots')).body.bots;
     const bot = bots.find((bot: Json) => bot.slug === 'beta');
     const listing = await bounded(rpc.call('projects.listEntries', { cwd: bot.workspaceRoot, directoryPath: 'library' }));
-    assert.deepEqual(listing.entries.map((entry: Json) => entry.path), ['library/counter.html', 'library/sample.csv', 'library/photo.svg', 'library/bars.svg', 'library/notes.txt', 'library/audio.wav']);
+    assert.deepEqual(listing.entries.map((entry: Json) => entry.path), ['library/counter.html', 'library/sample.csv', 'library/photo.svg', 'library/bars.svg', 'library/notes.txt', 'library/report.pdf', 'library/audio.wav']);
     const signed = await bounded(rpc.call('assets.createUrl', { resource: { _tag: 'workspace-file', threadId: bot.mainThreadId, path: 'library/counter.html' } }));
     const response = await fetch(fixture.url + '/t3' + signed.relativeUrl);
     assert.equal(response.status, 200);
@@ -654,6 +654,11 @@ test('Library fixture supplies real signed resources and rejects missing files a
       } else assert.match(bytes.toString(), name === 'notes.txt' ? /Generic/ : /name,value/);
       assert.equal((await fetch(url.replace('fixture%2Bread%2F', 'wrong'))).status, 403);
     }
+    // The PDF sample the file viewer draws with pdf.js.
+    const pdf = await bounded(rpc.call('assets.createUrl', { resource: { _tag: 'workspace-file', threadId: bot.mainThreadId, path: 'library/report.pdf' } }));
+    const pdfResponse = await fetch(fixture.url + '/t3' + pdf.relativeUrl);
+    assert.equal(pdfResponse.headers.get('content-type'), 'application/pdf');
+    assert.match(Buffer.from(await pdfResponse.arrayBuffer()).toString('latin1'), /^%PDF-1\.4[\s\S]*\/Count 2[\s\S]*%%EOF\n$/);
     // The chat image sample: a Bot-posted workspace image the image viewer opens.
     const bars = await bounded(rpc.call('assets.createUrl', { resource: { _tag: 'workspace-file', threadId: bot.mainThreadId, path: 'library/bars.svg' } }));
     assert.equal((await fetch(fixture.url + '/t3' + bars.relativeUrl)).headers.get('content-type'), 'image/svg+xml');
