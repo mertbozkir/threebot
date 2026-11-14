@@ -15,6 +15,16 @@ threebot rollback      # the version before the last update
 ```
 
 - **Releases** are GitHub release assets: `threebot-<version>.tar.gz` and `SHA256SUMS`. Pushing a `v<version>` tag that matches `package.json` builds and publishes them (`.github/workflows/release.yml`). Tags with a `-` are previews, which `threebot update --preview` installs.
+- **Release notes** follow T3 Code's format, and the app shows them in Settings → Updates, in the update button's popover and after an automatic update: a header (`**v0.1.7** · 23 changes from 4 contributors`, bots not counted), up to seven highlights, `### Plus N more changes.`, and GitHub's "What's Changed" list under a "Full changelog" fold. The release workflow publishes GitHub's generated notes; to replace them, write the highlights and run the script once the tag is pushed:
+
+  ```sh
+  # highlights.md: one "- **Label.** One sentence." per line, at most 7. End a line with (#12, #14)
+  # to name the PRs it covers, so they're left out of "Plus N more"; add "(beta)" where it applies.
+  node scripts/release-notes.mts v0.1.6 v0.1.7 --highlights highlights.md --out notes.md
+  gh release edit v0.1.7 --notes-file notes.md
+  ```
+
+  It asks GitHub (through `gh`) for the generated notes between the two tags and for each PR's author. `--target <ref>` names the commit when the new tag isn't pushed yet; `--repo owner/name` points it at another repository. Without `--highlights` the notes are the header and the full list.
 - **Layout:** `~/.threebot/runtime/versions/<version>` holds each installed version, `runtime/current` links to the one running, and `runtime/previous` to the one before. `~/.local/bin/threebot` runs `current`.
 - **Service:** launchd agent `tools.threebot.gateway` on macOS, systemd user unit `threebot.service` on Linux. Both run `threebot serve`, which reads `~/.threebot/.env`. Logs are in `~/.threebot/logs/`. On a headless Linux server, run `loginctl enable-linger $USER` so it keeps running after you log out. On Linux, `t3 service protect` (T3 Code 0.1.6 or newer) also keeps the T3 server alive when a Bot's commands fill the machine's memory.
 - **Installer settings:** `THREEBOT_VERSION`, `THREEBOT_HOME`, `THREEBOT_INSTALL_BIN_DIR` and `THREEBOT_RELEASE_BASE_URL` (a mirror holding `v<version>/` folders).

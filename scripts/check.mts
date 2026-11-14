@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The full gate: web tests and build (which type-checks the app, service worker and build config), the
-// web tests, server and scripts type-checks, server tests, fixture checks, the usage-stats collector, and asset checks. Any non-zero exit
+// web tests, server and scripts type-checks, server tests, fixture checks, the usage-stats collector, and asset and release-notes checks. Any non-zero exit
 // fails it (tsrs exits 2 on type errors).
 //
 // Every type check is tsrs, which follows TypeScript 7.1. Known blind spot: 7.1 infers destructured
@@ -24,5 +24,5 @@ run('node', ['--test', TEST_TIMEOUT, 'scripts/fixture.test.mts']);
 // The usage-stats collector (telemetry/), a Cloudflare Worker: its type check and tests.
 run(path.join(root, 'server', 'node_modules', '.bin', 'tsrs'), ['-p', 'telemetry/tsconfig.json']);
 run('node', ['--test', TEST_TIMEOUT, 'telemetry/test/worker.test.ts']);
-run('node', ['--test', TEST_TIMEOUT, 'scripts/verify-assets.test.mts']);
+run('node', ['--test', TEST_TIMEOUT, 'scripts/verify-assets.test.mts', 'scripts/release-notes.test.mts']);
 console.log('All checks passed.');

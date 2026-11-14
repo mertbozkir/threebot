@@ -3,7 +3,7 @@ import http from 'node:http';
 import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
-import { ACTIVITY_SAMPLES, AVATAR_PROVIDERS, AVATAR_SAMPLES, LANDING_SAMPLES, landingData, seedActivity, seedAvatars, seedInteractions, seedLatestT3, validateScenario, FIXTURE_SPEECH_MAX_BODY } from './fixture-scenarios.mts';
+import { ACTIVITY_SAMPLES, AVATAR_PROVIDERS, AVATAR_SAMPLES, LANDING_SAMPLES, fixtureReleases, landingData, seedActivity, seedAvatars, seedInteractions, seedLatestT3, validateScenario, FIXTURE_SPEECH_MAX_BODY } from './fixture-scenarios.mts';
 import type { FixtureInteractions, FixtureItem, FixtureModel, FixtureProject, FixtureRequest, FixtureRun, FixtureSample, FixtureThread } from './fixture-scenarios.mts';
 const require = createRequire(new URL('../server/package.json', import.meta.url));
 const { WebSocketServer } = require('ws');
@@ -224,6 +224,7 @@ export async function startFakeT3(root: string, port = 0, { scenario = 'basic', 
       const url = new URL(req.url!, 'http://127.0.0.1');
       if (url.pathname === '/api/auth/websocket-ticket/rpc' && req.method === 'POST') return json(res, 200, { ticket: 'fixture-only' });
       if (url.pathname === '/api/projects' && req.method === 'GET') return json(res, 200, { projects });
+      if (scenario === 'release-notes' && url.pathname === '/fixture/releases' && req.method === 'GET') return json(res, 200, fixtureReleases(String(url.searchParams.get('current'))).list);
       if (latest && url.pathname === '/api/voice/status' && req.method === 'GET') return json(res, 200, latest.voiceStatus);
       if (latest && url.pathname === '/api/voice/transcribe' && req.method === 'POST') {
         const chunks: Buffer[] = [];

@@ -73,15 +73,20 @@ export function compareVersions(a: string, b: string): number {
 
 export const assetName = (version: string) => `threebot-${version}.tar.gz`;
 
-/**
- * The release to install: the newest stable one, or an exact version. THREEBOT_RELEASES_URL points
- * at a GitHub-API-shaped list (for mirrors and tests); THREEBOT_RELEASE_BASE_URL swaps the download host.
- */
-export async function findRelease({ version, channel = "stable", env = process.env, fetchImpl = fetch }: { version?: string; channel?: Channel; env?: NodeJS.ProcessEnv; fetchImpl?: FetchJson } = {}): Promise<Release | null> {
+/** GitHub's newest releases, drafts left out. THREEBOT_RELEASES_URL points at a GitHub-API-shaped list (for mirrors and tests). */
+async function listReleases({ env = process.env, fetchImpl = fetch }: { env?: NodeJS.ProcessEnv; fetchImpl?: FetchJson } = {}): Promise<GitHubRelease[]> {
   const api = env.THREEBOT_RELEASES_URL || `https://api.github.com/repos/${REPO}/releases?per_page=30`;
   const res = await fetchImpl(api, { headers: { accept: "application/vnd.github+json", "user-agent": "threebot-updater" } });
   if (!res.ok) throw new Error(`Couldn't list releases (HTTP ${res.status})`);
-  const releases = ((await res.json()) as GitHubRelease[]).filter((r) => !r.draft && (channel === "preview" || !r.prerelease));
+  const list = await res.json();
+  return Array.isArray(list) ? (list as GitHubRelease[]).filter((r) => r && typeof r.tag_name === "string" && !r.draft) : [];
+}
+
+const releaseUrl = (r: GitHubRelease) => r.html_url ?? `https://github.com/${REPO}/releases/tag/v${r.tag_name.replace(/^v/, "")}`;
+
+/** Pick the release to install from a listing: the newest on the channel, or an exact version. THREEBOT_RELEASE_BASE_URL swaps the download host. */
+function pickRelease(all: GitHubRelease[], { version, channel = "stable", env = process.env }: { version?: string; channel?: Channel; env?: NodeJS.ProcessEnv }): Release | null {
+  const releases = all.filter((r) => channel === "preview" || !r.prerelease);
   const wanted = version ? releases.find((r) => r.tag_name.replace(/^v/, "") === String(version).replace(/^v/, "")) : releases
     .filter((r) => SEMVER.test(r.tag_name.replace(/^v/, "")))
     .sort((a, b) => compareVersions(b.tag_name, a.tag_name))[0];
@@ -91,7 +96,12 @@ export async function findRelease({ version, channel = "stable", env = process.e
   const asset = (name: string) => base ? `${base}/${name}` : wanted.assets?.find((a) => a.name === name)?.browser_download_url;
   const archive = asset(assetName(v)), sums = asset("SHA256SUMS");
   if (!archive || !sums) return null;
-  return { version: v, archive, sums, notes: wanted.body ?? "", url: wanted.html_url ?? `https://github.com/${REPO}/releases/tag/v${v}`, publishedAt: wanted.published_at ?? null };
+  return { version: v, archive, sums, notes: wanted.body ?? "", url: releaseUrl(wanted), publishedAt: wanted.published_at ?? null };
+}
+
+/** The release to install: the newest stable one, or an exact version. */
+export async function findRelease({ version, channel = "stable", env = process.env, fetchImpl = fetch }: { version?: string; channel?: Channel; env?: NodeJS.ProcessEnv; fetchImpl?: FetchJson } = {}): Promise<Release | null> {
+  return pickRelease(await listReleases({ env, fetchImpl }), { version, channel, env });
 }
 
 export function expectedSum(sumsText: string, name: string): string | null {
@@ -237,21 +247,32 @@ export const channelFor = (version: string): Channel => String(version).includes
  * callers share one request. A failed check keeps the last good answer and waits longer each time
  * (up to `maxBackoffMs`) before trying again. A preview install follows previews.
  */
+/** A release as the app shows it. `notes` is the raw release body, which the app parses as untrusted text. */
+export interface ReleaseInfo { version: string; url: string; notes: string; publishedAt: string | null }
+// Enough for the full changelog of a big release; the app shows at most 100 of its changes.
+const MAX_NOTES = 60_000;
+const releaseInfo = (r: { version: string; url: string; notes: string; publishedAt: string | null }): ReleaseInfo => ({ version: r.version, url: r.url, notes: r.notes.slice(0, MAX_NOTES), publishedAt: r.publishedAt });
 export interface UpdateStatus {
-  latest: { version: string; url: string; notes: string; publishedAt: string | null } | null;
+  latest: ReleaseInfo | null;
+  /** The release this copy runs, for "what changed" after an update. Null when GitHub doesn't list it (a dev build). */
+  current: ReleaseInfo | null;
   updateAvailable: boolean;
   error: string | null;
   checkedAt: string | null;
 }
 export function createUpdateChecker({ env = process.env, fetchImpl = fetch, ttlMs = 15 * 60 * 1000, maxBackoffMs = 2 * 60 * 60 * 1000, version = currentVersion(), now = Date.now }: { env?: NodeJS.ProcessEnv; fetchImpl?: FetchJson; ttlMs?: number; maxBackoffMs?: number; version?: string; now?: () => number } = {}) {
   const channel = channelFor(version);
-  let value: UpdateStatus = { latest: null, updateAvailable: false, error: null, checkedAt: null };
+  let value: UpdateStatus = { latest: null, current: null, updateAvailable: false, error: null, checkedAt: null };
   let nextAt = 0, failures = 0, inflight: Promise<UpdateStatus> | null = null;
   const refresh = async (): Promise<UpdateStatus> => {
     const at = now();
     try {
-      const latest = await findRelease({ env, fetchImpl, channel });
-      value = { latest: latest && { version: latest.version, url: latest.url, notes: latest.notes.slice(0, 4000), publishedAt: latest.publishedAt }, updateAvailable: Boolean(latest && compareVersions(latest.version, version) > 0), error: null, checkedAt: new Date(at).toISOString() };
+      const all = await listReleases({ env, fetchImpl });
+      const latest = pickRelease(all, { channel, env });
+      // The running release needs no download links, only its notes.
+      const mine = all.find((r) => r.tag_name.replace(/^v/, "") === version);
+      const current = mine ? releaseInfo({ version, url: releaseUrl(mine), notes: mine.body ?? "", publishedAt: mine.published_at ?? null }) : null;
+      value = { latest: latest && releaseInfo(latest), current, updateAvailable: Boolean(latest && compareVersions(latest.version, version) > 0), error: null, checkedAt: new Date(at).toISOString() };
       failures = 0;
       nextAt = at + ttlMs;
     } catch (error) {

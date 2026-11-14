@@ -32,7 +32,9 @@ async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 /** What the last automatic update did, until the app has shown it once. */
 export type UpdateNotice = { kind: "updated" | "rolledBack" | "failed" | "waited"; version: string; from: string; url: string; at: string };
-export type SystemInfo = { version: string; installed: boolean; service: boolean; latest: { version: string; url: string; notes: string; publishedAt: string | null } | null; updateAvailable: boolean; error: string | null; checkedAt: string | null;
+/** A release as the gateway passes it on; `notes` is the raw GitHub body, parsed by lib/releaseNotes. */
+export type ReleaseInfo = { version: string; url: string; notes: string; publishedAt: string | null };
+export type SystemInfo = { version: string; installed: boolean; service: boolean; latest: ReleaseInfo | null; current?: ReleaseInfo | null; updateAvailable: boolean; error: string | null; checkedAt: string | null;
   auto: boolean; waiting: { version: string; since: number } | null; notice: UpdateNotice | null };
 export type TailscaleState = { installed: boolean; running?: boolean; needsLogin?: boolean; state?: string; authUrl: string | null; dnsName?: string | null; https?: boolean; login?: string | null; enabled: boolean; fromEnv: boolean; users: string[]; url?: string; serving?: boolean; error?: string };
 export type AccessState = {

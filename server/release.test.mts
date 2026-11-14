@@ -146,3 +146,15 @@ test("a preview install is offered newer previews, a stable install only stable 
   const stable = await createUpdateChecker({ env: {}, version: "0.1.9", fetchImpl: list })();
   assert.deepEqual([stable.updateAvailable, stable.latest?.version], [false, "0.1.9"]);
 });
+
+test("the update check also carries the running release's notes, whole, for what changed after an update", async () => {
+  const long = "x".repeat(20_000);
+  const list = async () => json([release("v0.1.7", { body: `notes v0.1.7 ${long}` }), release("v0.1.6", { assets: [] })]);
+  const status = await createUpdateChecker({ env: {}, version: "0.1.6", fetchImpl: list })();
+  assert.equal(status.latest?.version, "0.1.7");
+  assert.equal(status.latest?.notes.length, `notes v0.1.7 ${long}`.length, "a full changelog isn't cut at 4,000 characters");
+  // The running release needs no download assets to show its notes.
+  assert.deepEqual(status.current, { version: "0.1.6", url: "https://example.test/v0.1.6", notes: "notes v0.1.6", publishedAt: null });
+  const dev = await createUpdateChecker({ env: {}, version: "0.1.8", fetchImpl: list })();
+  assert.equal(dev.current, null);
+});

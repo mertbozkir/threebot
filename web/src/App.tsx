@@ -258,7 +258,7 @@ function Dialogs() {
         : <DeleteBotDialog slug={dialog.slug} />)}
       {typeof dialog === "object" && dialog?.kind === "main-bot" && <MainBotDialog intent={dialog.intent} initialSlug={dialog.initialSlug} />}
       <UsageStatsPrompt />
-      {toastMsg && <div className="pop-in fixed bottom-6 left-1/2 z-[70] w-max max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-2xl bg-pill px-4 py-2 text-[13px] text-pill-fg shadow-[var(--shadow-pop)]" role="status">{toastMsg}{toastLink && <> <a href={toastLink.href} target="_blank" rel="noopener noreferrer" className="font-medium underline underline-offset-2">{toastLink.label}</a></>}</div>}
+      {toastMsg && <div className="pop-in fixed bottom-6 left-1/2 z-[70] w-max max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-2xl bg-pill px-4 py-2 text-[13px] text-pill-fg shadow-[var(--shadow-pop)]" role="status">{toastMsg}{toastLink && <> <a href={toastLink.href} target="_blank" rel="noopener noreferrer" onClick={toastLink.open && ((e) => { e.preventDefault(); toastLink.open!(); useApp.setState({ toast: null, toastLink: null }); })} className="font-medium underline underline-offset-2">{toastLink.label}</a></>}</div>}
     </>
   );
 }
