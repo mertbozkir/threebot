@@ -201,7 +201,6 @@ function General({ s, accountOnly = false }: { s: Settings; accountOnly?: boolea
           <Select label="Voice language" value={voiceSettings.lang} onChange={(lang) => saveVoiceSettings({ lang, voice: null })} options={voiceLanguageOptions()} />
         </Row>
         <T3DictationRow />
-        <CloudDictationRows />
       </Group>}
     </>
   );
@@ -226,7 +225,7 @@ function CloudDictationRows() {
   if (!state) return null;
   const provider = picked === undefined ? state.provider : picked;
   return <>
-    <Row title="Cloud transcription" desc="Dictation records here and the gateway sends the audio to the provider you pick. Better with mixed languages (it expects your voice language and English). Off keeps the browser or T3 Code.">
+    <Row title={<span className="inline-flex items-center gap-2">Transcribe with OpenAI or Gemini<span className="rounded-full border border-line px-1.5 text-[11px] leading-[18px] text-muted">Beta</span></span>} desc="Dictation records here and the gateway sends the audio to the provider you pick. Better with mixed languages (it expects your voice language and English). Off keeps the browser or T3 Code.">
       <Select<"" | CloudProvider> label="Cloud transcription" value={provider ?? ""} onChange={(value) => {
         const next = value || null;
         setPicked(next);
@@ -374,6 +373,9 @@ function Beta({ s }: { s: Settings }) {
             <Switch checked={beta[f.key] === true} onChange={(v) => save({ beta: { ...beta, [f.key]: v } })} label={f.title} />
           </Row>
         ))}
+      </Group>
+      <Group title="Cloud transcription">
+        <CloudDictationRows />
       </Group>
     </>
   );
