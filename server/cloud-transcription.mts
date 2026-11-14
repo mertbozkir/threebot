@@ -98,6 +98,9 @@ export function createCloudTranscription({ file, keyFile, fetch: request = globa
     const key = provider ? stored.keys[provider] : undefined;
     if (!provider || !key) throw httpError(409, "Cloud transcription is off. Turn it on in Settings › Beta.");
     if (!wav.length || wav.length > MAX_AUDIO_BYTES) throw httpError(413, "That recording is too long to transcribe.");
+    const seconds = wavSeconds(wav);
+    if (seconds === null) throw httpError(415, "That recording isn't a WAV file.");
+    if (seconds > MAX_LIVE_MS / 1000) throw httpError(413, "That recording is longer than 5 minutes.");
     const hints = languageHints(lang);
     const signal = AbortSignal.timeout(TIMEOUT_MS);
     const model = stored.models[provider];
@@ -302,6 +305,23 @@ export function relayLiveDictation(client: LiveSocket, upstream: LiveSocket, { m
   client.on("close", () => finish());
   client.on("error", () => finish());
   return { stop };
+}
+
+/** How long a PCM WAV plays, from its fmt and data chunks; null when it isn't one. */
+export function wavSeconds(wav: Buffer): number | null {
+  if (wav.length < 12 || wav.toString("ascii", 0, 4) !== "RIFF" || wav.toString("ascii", 8, 12) !== "WAVE") return null;
+  let byteRate = 0;
+  for (let at = 12; at + 8 <= wav.length;) {
+    const id = wav.toString("ascii", at, at + 4), size = wav.readUInt32LE(at + 4);
+    if (id === "fmt " && at + 16 <= wav.length - 8) {
+      if (wav.readUInt16LE(at + 8) !== 1) return null;
+      byteRate = wav.readUInt32LE(at + 16);
+    }
+    // The data chunk may claim more than was sent; what was sent is what the provider hears.
+    if (id === "data") return byteRate ? Math.min(size, wav.length - at - 8) / byteRate : null;
+    at += 8 + size + (size % 2);
+  }
+  return null;
 }
 
 const label = (provider: Provider) => provider === "openai" ? "OpenAI" : "Gemini";

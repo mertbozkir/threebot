@@ -19,7 +19,16 @@ async function setup(reply: (call: Call) => Response) {
   return { dir, calls, service };
 }
 
-const wav = Buffer.from("RIFF....WAVEfmt fake audio");
+/** 16 kHz mono PCM16 WAV of `seconds` silence, as the browser sends. */
+function makeWav(seconds: number, rate = 16_000) {
+  const data = Math.round(seconds * rate) * 2;
+  const out = Buffer.alloc(44 + data);
+  out.write("RIFF", 0, "ascii"); out.writeUInt32LE(36 + data, 4); out.write("WAVEfmt ", 8, "ascii");
+  out.writeUInt32LE(16, 16); out.writeUInt16LE(1, 20); out.writeUInt16LE(1, 22); out.writeUInt32LE(rate, 24);
+  out.writeUInt32LE(rate * 2, 28); out.writeUInt16LE(2, 32); out.writeUInt16LE(16, 34); out.write("data", 36, "ascii"); out.writeUInt32LE(data, 40);
+  return out;
+}
+const wav = makeWav(0.5);
 
 test("off by default, and a provider needs its key before it can be chosen", async () => {
   const { service, calls } = await setup(() => new Response("{}"));
@@ -93,6 +102,18 @@ test("provider failures become readable errors without the key", async () => {
   await assert.rejects(service.transcribe(wav, "en-US"), (e: any) => e.status === 502 && /rejected the API key: Incorrect API key provided: \[key\]\. You can find/.test(e.message) && !/sk-/.test(e.message));
   assert.equal(providerMessage("API key not valid: AIzaSyD-abc_123. Please pass a valid API key."), "API key not valid: [key]. Please pass a valid API key.");
   await assert.rejects(service.transcribe(Buffer.alloc(0), "en-US"), (e: any) => e.status === 413);
+});
+
+test("recordings over five minutes are refused before any provider call, whatever the sample rate", async () => {
+  let calls = 0;
+  const { service } = await setup(() => { calls++; return Response.json({ text: "ok" }); });
+  await service.update({ apiKey: { provider: "openai", value: "sk-test" }, provider: "openai" });
+  assert.equal(await service.transcribe(makeWav(300), "en-US"), "ok");
+  // 12 MB holds over six minutes at 16 kHz, and far more at 8 kHz: the duration is what counts.
+  await assert.rejects(service.transcribe(makeWav(301), "en-US"), (e: any) => e.status === 413 && /5 minutes/.test(e.message));
+  await assert.rejects(service.transcribe(makeWav(600, 8_000), "en-US"), (e: any) => e.status === 413);
+  await assert.rejects(service.transcribe(Buffer.from("RIFF....WAVEfmt fake audio"), "en-US"), (e: any) => e.status === 415);
+  assert.equal(calls, 1);
 });
 
 test("language hints and transcript parsing", () => {
