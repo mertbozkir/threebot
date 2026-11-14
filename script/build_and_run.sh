@@ -52,6 +52,8 @@ cat > "$APP_CONTENTS/Info.plist" <<'PLIST'
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSMicrophoneUsageDescription</key><string>Threebot uses the microphone for voice input and voice chat.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>Threebot turns your speech into text for voice input.</string>
   <key>NSAppTransportSecurity</key>
   <dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict>

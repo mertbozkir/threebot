@@ -387,6 +387,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     func webViewDidClose(_ view: WKWebView) { disposePopup(view) }
 
+    // Voice input and voice chat need the microphone; only the Threebot page gets it, and never the camera.
+    func webView(_ view: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo,
+                 type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        let port = origin.port == 0 ? (origin.protocol == "https" ? 443 : 80) : origin.port
+        let gatewayPort = gateway.port ?? (gateway.scheme == "https" ? 443 : 80)
+        let sameOrigin = view === webView && origin.protocol == gateway.scheme
+            && unbracketed(origin.host) == unbracketed(gateway.host ?? "") && port == gatewayPort
+        decisionHandler(sameOrigin && type == .microphone ? .grant : .deny)
+    }
+
     private func openDocumentWindow(_ request: URLRequest) {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = webView.configuration.websiteDataStore
