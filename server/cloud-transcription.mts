@@ -10,9 +10,10 @@ export type Provider = (typeof PROVIDERS)[number];
 
 /** Models each provider offers for recorded speech. The first is the default. */
 export const MODELS: Record<Provider, readonly string[]> = {
-  // Dictation streams to OpenAI live (see liveSession). gpt-4o-transcribe writes a phrase at each pause;
-  // gpt-live-transcribe writes word by word. gpt-4o-transcribe and gpt-4o-mini-transcribe shut down on 2027-02-26.
-  openai: ["gpt-4o-transcribe", "gpt-live-transcribe", "gpt-transcribe", "gpt-4o-mini-transcribe"],
+  // Dictation streams to OpenAI live (see relayLiveDictation). gpt-live-transcribe writes word by word and,
+  // measured on mixed Turkish and English, kept English terms that gpt-4o-transcribe garbled when it
+  // transcribed each pause on its own. gpt-4o-transcribe and gpt-4o-mini-transcribe shut down on 2027-02-26.
+  openai: ["gpt-live-transcribe", "gpt-4o-transcribe", "gpt-transcribe", "gpt-4o-mini-transcribe"],
   gemini: ["gemini-3.5-transcribe"],
 };
 

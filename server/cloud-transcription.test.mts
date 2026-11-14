@@ -35,7 +35,7 @@ test("keys are stored encrypted and never returned", async () => {
   const { service, dir } = await setup(() => new Response("{}"));
   const status = await service.update({ apiKey: { provider: "openai", value: " sk-secret-123 " }, provider: "openai" });
   assert.equal(status.provider, "openai");
-  assert.equal(status.model, "gpt-4o-transcribe", "the recommended model");
+  assert.equal(status.model, "gpt-live-transcribe", "the recommended model");
   assert.equal(status.hasKey.openai, true);
   assert.doesNotMatch(JSON.stringify(status), /sk-secret/);
   assert.doesNotMatch(await readFile(path.join(dir, "transcription.json"), "utf8"), /sk-secret/);
@@ -64,6 +64,7 @@ test("OpenAI gets the WAV, the model, and the voice language plus English as hin
 test("older OpenAI models get no languages list, and the live-only model records with gpt-transcribe", async () => {
   const { service, calls } = await setup(() => Response.json({ text: "ok" }));
   await service.update({ apiKey: { provider: "openai", value: "sk-test" }, provider: "openai" });
+  await service.update({ model: "gpt-4o-transcribe" });
   await service.transcribe(wav, "tr-TR");
   assert.equal((calls[0]!.init.body as FormData).get("model"), "gpt-4o-transcribe");
   assert.deepEqual((calls[0]!.init.body as FormData).getAll("languages[]"), []);
