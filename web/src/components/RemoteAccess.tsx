@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
-import { Copy, ExternalLink, RefreshCw } from "lucide-react";
-import { api, type AccessState, type SystemInfo, type UpdateNotice } from "../lib/api";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Copy, ExternalLink, RefreshCw, X } from "lucide-react";
+import { api, type AccessState, type ReleaseInfo, type SystemInfo, type UpdateNotice } from "../lib/api";
 import { timeAgo } from "../lib/projects";
-import { toast } from "../store";
+import { openDialog, toast, useApp } from "../store";
+import { ReleaseNotesView } from "./ReleaseNotes";
 import { Group, H, Row } from "./SettingsParts";
 import { IconButton, Pill, Spinner, Switch } from "./ui";
 
@@ -100,11 +102,11 @@ const UPDATE_POLL_MS = 2 * 60 * 1000;
  * itself from Settings (an installed runtime run as a service), which the sidebar's update button needs.
  */
 export function useUpdateNotice() {
-  const [notice, setNotice] = useState<{ version: string; installable: boolean } | null>(null);
+  const [notice, setNotice] = useState<{ version: string; installable: boolean; release: ReleaseInfo } | null>(null);
   useEffect(() => {
     let live = true;
     const load = () => api.system().then((s) => {
-      if (live) setNotice(s.updateAvailable && s.latest ? { version: s.latest.version, installable: s.installed && s.service } : null);
+      if (live) setNotice(s.updateAvailable && s.latest ? { version: s.latest.version, installable: s.installed && s.service, release: s.latest } : null);
     }).catch(() => { /* Offline or rate-limited: keep what we had and try again later. */ });
     load();
     const timer = setInterval(load, UPDATE_POLL_MS);
@@ -122,6 +124,12 @@ export function updateNoticeText(notice: UpdateNotice): { text: string; link: st
   return { text: `${v} is ready, but your Bots have been busy for a day. Update from Settings → Updates when they're free.`, link: "What's new" };
 }
 
+/** Settings → Updates, where the notes of the running version and of a newer one show. */
+export function openUpdates() {
+  useApp.setState({ settingsPane: "updates" });
+  openDialog("settings");
+}
+
 /** Shows what the last automatic update did, once: the gateway forgets it as soon as it's been shown. */
 export function useAutoUpdateNotice() {
   useEffect(() => {
@@ -129,13 +137,76 @@ export function useAutoUpdateNotice() {
     const load = () => api.system().then((s) => {
       if (!live || !s.notice) return;
       const { text, link } = updateNoticeText(s.notice);
-      toast(text, { href: s.notice.url, label: link });
+      // "What's new" opens the notes in the app; a rollback or failure links to the release on GitHub.
+      const inApp = s.notice.kind === "updated" || s.notice.kind === "waited";
+      toast(text, { href: s.notice.url, label: link, ...(inApp ? { open: openUpdates } : {}) });
       void api.dismissUpdateNotice(s.notice.at).catch(() => {});
     }).catch(() => { /* Offline or signed out: look again later. */ });
     load();
     const timer = setInterval(load, UPDATE_POLL_MS);
     return () => { live = false; clearInterval(timer); };
   }, []);
+}
+
+/**
+ * Start `threebot update` on the server and reload once the gateway answers with the new version.
+ * Resolves with an error message when it didn't finish, or nothing when there was nothing to install.
+ */
+async function runUpdate(onStarted: (version: string) => void): Promise<string | null> {
+  const { started, version } = await api.startUpdate();
+  if (!started) return null;
+  onStarted(version);
+  const end = Date.now() + 4 * 60 * 1000;
+  while (Date.now() < end) {
+    await new Promise((r) => setTimeout(r, 2000));
+    try { if ((await api.health()).version === version) { location.reload(); return null; } } catch { /* restarting */ }
+  }
+  return "The update didn't finish. Threebot keeps running the version it had; its log is in ~/.threebot/logs/update.log.";
+}
+
+/**
+ * The update button's popover, like T3 Code's: what's new in the offered release and an Update button.
+ * Anchored above the button on a wide screen; a sheet along the bottom on a phone.
+ */
+export function UpdatePopover({ anchor, release, onClose }: { anchor: HTMLElement; release: ReleaseInfo; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<React.CSSProperties>({ visibility: "hidden" });
+  const [updating, setUpdating] = useState(false);
+  const [error, setError] = useState("");
+  useLayoutEffect(() => {
+    const r = anchor.getBoundingClientRect();
+    const sheet = window.innerWidth < 640;
+    setPlace(sheet ? { left: 8, right: 8, bottom: 8, maxHeight: "min(80vh, calc(100vh - 16px))" }
+      : { left: Math.max(8, Math.min(r.left, window.innerWidth - 368)), bottom: Math.max(8, window.innerHeight - r.top + 8), width: 360, maxHeight: Math.max(240, r.top - 16) });
+  }, [anchor]);
+  useEffect(() => {
+    ref.current?.focus();
+    const away = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node) && !anchor.contains(e.target as Node)) onClose(); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); anchor.focus(); } };
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", key, true);
+    return () => { document.removeEventListener("pointerdown", away); document.removeEventListener("keydown", key, true); };
+  }, [anchor, onClose]);
+  const update = async () => {
+    setError("");
+    try { const failed = await runUpdate(() => setUpdating(true)); if (failed) { setUpdating(false); setError(failed); } }
+    catch (e) { setUpdating(false); setError(message(e)); }
+  };
+  return createPortal(<div ref={ref} role="dialog" aria-label={`Update to v${release.version}`} tabIndex={-1}
+    className="update-popover pop-in fixed z-[60] flex flex-col overflow-hidden rounded-2xl border border-line bg-elevated text-fg shadow-[var(--shadow-pop)] outline-none" style={place}>
+    <div className="flex items-center gap-2 border-b border-line px-4 py-3">
+      <span className="min-w-0 flex-1 text-[14px] font-medium">Update available</span>
+      <IconButton onClick={onClose} aria-label="Close" className="-me-1.5 size-7"><X size={15} /></IconButton>
+    </div>
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+      <ReleaseNotesView release={release} />
+    </div>
+    <div className="flex items-center gap-2 border-t border-line px-4 py-3">
+      {error ? <p role="alert" className="min-w-0 flex-1 text-[12.5px] text-danger">{error}</p>
+        : <p className="min-w-0 flex-1 text-[12.5px] text-muted">{updating ? "Updating. Threebot restarts and this page reloads." : "Threebot restarts to update. Your Bots keep their work."}</p>}
+      {updating ? <Spinner /> : <Pill onClick={() => void update()}>Update</Pill>}
+    </div>
+  </div>, document.body);
 }
 
 /** Settings → Updates: the same flow as T3 Code's, through `threebot update` on the server. */
@@ -155,17 +226,11 @@ export function UpdatesPane({ t3 }: { t3: React.ReactNode }) {
   const update = async () => {
     setError("");
     try {
-      const { started, version } = await api.startUpdate();
+      let started = false;
+      // The gateway restarts on the new version; runUpdate reloads once it answers with it.
+      const failed = await runUpdate((version) => { started = true; setUpdating(version); });
       if (!started) return void check(true);
-      setUpdating(version);
-      // The gateway restarts on the new version; reload once it answers with it.
-      const end = Date.now() + 4 * 60 * 1000;
-      while (Date.now() < end) {
-        await new Promise((r) => setTimeout(r, 2000));
-        try { if ((await api.health()).version === version) { location.reload(); return; } } catch { /* restarting */ }
-      }
-      setUpdating(null);
-      setError("The update didn't finish. Threebot keeps running the version it had; its log is in ~/.threebot/logs/update.log.");
+      if (failed) { setUpdating(null); setError(failed); }
     } catch (e) { setUpdating(null); setError(message(e)); }
   };
 
@@ -205,6 +270,9 @@ export function UpdatesPane({ t3 }: { t3: React.ReactNode }) {
       {t3}
     </Group>
     {info?.updateAvailable && latest && !canUpdate && <p className="mb-3 text-[12.5px] leading-5 text-muted">{info.installed ? <>Run <code>threebot update</code> on the server to install it.</> : <>This copy runs from a git checkout. Update it with <code>git pull &amp;&amp; npm run setup</code>, then restart it.</>}</p>}
-    {latest && <p className="text-[12.5px] text-muted"><a href={latest.url} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:underline">What's new in {latest.version}</a></p>}
+    {info?.updateAvailable && latest && <Group title="What's new"><ReleaseNotesView release={latest} className="px-4 py-3.5" /></Group>}
+    {info?.current
+      ? <Group title={info.updateAvailable ? "Your version" : "What's new in your version"}><ReleaseNotesView release={info.current} className="px-4 py-3.5" /></Group>
+      : latest && !info?.updateAvailable && <p className="text-[12.5px] text-muted"><a href={latest.url} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:underline">What's new in {latest.version}</a></p>}
   </>;
 }

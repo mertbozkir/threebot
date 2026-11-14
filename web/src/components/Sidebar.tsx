@@ -4,7 +4,7 @@ import { Archive, ArrowLeftRight, FolderKanban, CircleCheck, ArrowUp, ArrowDown,
 import { ActivityAvatar } from "./ActivityAvatar";
 import { Menu, Modal, Pill, RoundButton, type MenuItem } from "./ui";
 import { useUsagePeak } from "./UsagePanel";
-import { useUpdateNotice } from "./RemoteAccess";
+import { UpdatePopover, useUpdateNotice } from "./RemoteAccess";
 import { archiveThread, archivedInT3, unarchiveBotProject, isSettled, setThreadDone, botStatus, mainThread, markThreadRead, markThreadUnread, openDialog, openProjects, saveSettings, select, toast, updateBot, useApp, useProjectsOn, type BotStatus } from "../store";
 import { followBoard, isOpenTask, useBoard } from "../lib/projects";
 import { copyText } from "../lib/t3";
@@ -375,15 +375,22 @@ function AccountRow({ compact = false }: { compact?: boolean }) {
   );
 }
 
-/** T3 Code's footer update button: shown once Settings → Updates could install a newer release, and opens it there. */
+/**
+ * T3 Code's footer update button: shown once Settings → Updates could install a newer release. It opens
+ * a popover with what's new in it and an Update button.
+ */
 function UpdateButton({ large = false, className }: { large?: boolean; className?: string }) {
   const update = useUpdateNotice();
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   if (!update?.installable) return null;
   const label = `Update to v${update.version}`;
-  return <button type="button" onClick={() => { useApp.setState({ settingsPane: "updates" }); openDialog("settings"); }} title={label} aria-label={label}
-    className={clsx("update-button grid shrink-0 place-items-center rounded-full bg-accent text-app transition-[filter] hover:brightness-110", large ? "size-11" : "size-[30px]", className)}>
-    <CloudDownload size={large ? 21 : 16} aria-hidden="true" />
-  </button>;
+  return <>
+    <button type="button" onClick={(e) => { const el = e.currentTarget; setAnchor((open) => open ? null : el); }} title={label} aria-label={label} aria-haspopup="dialog" aria-expanded={Boolean(anchor)}
+      className={clsx("update-button grid shrink-0 place-items-center rounded-full bg-accent text-app transition-[filter] hover:brightness-110", large ? "size-11" : "size-[30px]", className)}>
+      <CloudDownload size={large ? 21 : 16} aria-hidden="true" />
+    </button>
+    {anchor && <UpdatePopover anchor={anchor} release={update.release} onClose={() => setAnchor(null)} />}
+  </>;
 }
 
 type MenuPoint = { clientX: number; clientY: number; preventDefault: () => void };

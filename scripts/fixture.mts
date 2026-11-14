@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import type { ChildProcess, ChildProcessByStdio } from 'node:child_process';
 import { once } from 'node:events';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
@@ -16,12 +16,14 @@ import type { Readable } from 'node:stream';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MODEL, SAMPLE_IMAGE, SAMPLE_TEXT, samplesFor, STAMP, startFakeT3, type FixtureLink } from './fixture-t3.mts';
 import { T3Client } from '../server/t3rpc.mts';
-import { LANDING_SECTIONS, LANDING_USER, validateScenario } from './fixture-scenarios.mts';
+import { LANDING_SECTIONS, LANDING_USER, fixtureReleases, validateScenario } from './fixture-scenarios.mts';
 import { startFakeExecutor } from './fixture-executor.mts';
 
 const repo = fileURLToPath(new URL('../', import.meta.url));
 const serverDir = path.join(repo, 'server');
 const staticDir = path.join(repo, 'web', 'dist');
+// The version the gateway reports (package.json), for the release-notes scenario's releases.
+const packageVersion: string = JSON.parse(readFileSync(path.join(repo, 'package.json'), 'utf8')).version;
 
 // Node's permission model forbids fsync even for an allowed FileHandle. On macOS,
 // enforce paths in the OS instead so the real Vault's atomic writes stay intact.
@@ -53,7 +55,7 @@ ${git ? '' : '(deny process-fork)\n'}(deny process-exec)
 
 // An allowlist, never {...process.env}: ignore production URLs, tokens, NODE_OPTIONS,
 // proxy settings, CF Access, executors, T3_CLI, and the user's actual HOME.
-export function gatewayInvocation(root: string, port: number, t3Port: number, executorPort?: number, { git = false }: { git?: boolean } = {}) {
+export function gatewayInvocation(root: string, port: number, t3Port: number, executorPort?: number, { git = false, releases = false }: { git?: boolean; releases?: boolean } = {}) {
   if (executorPort !== undefined && (!Number.isInteger(executorPort) || executorPort < 1 || executorPort > 65535)) throw new Error('Invalid local Executor fixture port');
   if (!process.allowedNodeEnvironmentFlags.has('--permission')) throw new Error('Use Node >= 22.13 with --permission support.');
   const osSandbox = process.platform === 'darwin';
@@ -83,6 +85,8 @@ export function gatewayInvocation(root: string, port: number, t3Port: number, ex
       THREEBOT_TELEMETRY_URL: 'http://127.0.0.1:9/v1/ping',
       // Look at linked machines every second, so an outage shows within a test's time.
       THREEBOT_MACHINE_POLL_MS: '1000',
+      // The release-notes scenario's fake releases, from the fake T3; otherwise GitHub's real list.
+      ...(releases ? { THREEBOT_RELEASES_URL: `http://127.0.0.1:${t3Port}/fixture/releases?current=${encodeURIComponent(packageVersion)}` } : {}),
       ...(executorPort === undefined ? {} : { EXECUTOR_BACKEND: 'self-hosted', EXECUTOR_URL: `http://127.0.0.1:${executorPort}`,
         EXECUTOR_PUBLIC_URL: `http://127.0.0.1:${executorPort}`, EXECUTOR_ORG: 'fixture', EXECUTOR_TOKEN: 'fixture-only' }),
     },
@@ -131,6 +135,9 @@ async function seed(root: string, scenario = 'basic') {
     : { userName: 'Sample User', theme: scenario === 'activity' ? 'system' : 'light', timezone: 'UTC', defaultModel: MODEL };
   await writeFile(path.join(root, 'bots/.botapp/settings.json'), JSON.stringify(settings) + '\n');
   if (scenario === 'adopt') await seedRepo(root);
+  // The notice an automatic update leaves: the app shows "Updated to v…" once.
+  if (scenario === 'release-notes') await writeFile(path.join(root, 'bots/.botapp/auto-update.json'), JSON.stringify({ auto: true, notice: { kind: 'updated', version: packageVersion,
+    from: fixtureReleases(packageVersion).previous, url: `https://github.com/RokaSwK/threebot/releases/tag/v${packageVersion}`, at: new Date().toISOString() } }) + '\n');
 }
 
 async function freePort() {
@@ -179,7 +186,7 @@ export async function createFixture({ port = 0, scenario = 'basic', links }: { p
     async restart() {
       if (closed) throw new Error('Fixture already closed');
       await stopChild(child);
-      const invocation = gatewayInvocation(root, gatewayPort, fake!.port, executor?.port, { git: scenario === 'adopt' });
+      const invocation = gatewayInvocation(root, gatewayPort, fake!.port, executor?.port, { git: scenario === 'adopt', releases: scenario === 'release-notes' });
       child = spawn(invocation.command, invocation.args, { env: invocation.env, cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
       logs = '';
       await new Promise<void>((resolve, reject) => {
@@ -307,7 +314,7 @@ export async function smokeFixture(fixture: Fixture) {
 async function main() {
   const args = process.argv.slice(2);
   if (args.includes('--help')) {
-    console.log('Usage: node scripts/fixture.mts [--port PORT] [--scenario basic|interactions|executor|library|latest-t3|avatars|activity|adopt] [--check]\nInteractive: restart, reset, quit. Ctrl-C cleans up. --check runs API smoke checks and removes the fixture.');
+    console.log('Usage: node scripts/fixture.mts [--port PORT] [--scenario basic|interactions|executor|library|latest-t3|avatars|activity|adopt|release-notes] [--check]\nInteractive: restart, reset, quit. Ctrl-C cleans up. --check runs API smoke checks and removes the fixture.');
     return;
   }
   let port = 0;

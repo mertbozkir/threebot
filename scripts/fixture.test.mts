@@ -12,7 +12,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { ADOPT_REPO, createFixture, gatewayInvocation, smokeFixture } from './fixture.mts';
 import { FIXTURE_PAIRING_CODE, startFakeT3, type FixtureLink } from './fixture-t3.mts';
-import { APPROVAL_OPTIONS, DUMMY_SECRET, INITIAL_ANSWER, INTERACTION_IDS } from './fixture-scenarios.mts';
+import { APPROVAL_OPTIONS, DUMMY_SECRET, INITIAL_ANSWER, INTERACTION_IDS, fixtureReleases } from './fixture-scenarios.mts';
 import { T3Client } from '../server/t3rpc.mts';
 import { EXECUTOR_FIXTURE_IDS, EXECUTOR_FIXTURE_TOKEN } from './fixture-executor.mts';
 
@@ -235,8 +235,8 @@ test('activity scenario shows Bots in different activities and walks Alpha throu
 });
 
 test('basic protocol remains unchanged and interaction handlers are opt-in', { timeout: 15000 }, async () => {
-  await assert.rejects(startFakeT3('/unused', 0, { scenario: 'unknown' }), /Scenario must be basic, interactions, executor, library, landing, latest-t3, avatars, activity or adopt/);
-  await assert.rejects(createFixture({ scenario: 'unknown' }), /Scenario must be basic, interactions, executor, library, landing, latest-t3, avatars, activity or adopt/);
+  await assert.rejects(startFakeT3('/unused', 0, { scenario: 'unknown' }), /Scenario must be basic, interactions, executor, library, landing, latest-t3, avatars, activity, adopt or release-notes/);
+  await assert.rejects(createFixture({ scenario: 'unknown' }), /Scenario must be basic, interactions, executor, library, landing, latest-t3, avatars, activity, adopt or release-notes/);
   const fake = await startFakeT3('/unused');
   const rpc = new T3Client({ baseUrl: `http://127.0.0.1:${fake.port}`, token: 'fixture-only' });
   try {
@@ -978,4 +978,20 @@ test('linked machines: discovered from T3, remote threads read and messaged in t
     assert.match(agents, /## Where coding work runs\n- Coding work .* runs on \*\*Fixture laptop\*\* \(environmentId `fixture-peer`\)/);
     assert.equal((await fixture.request('/api/settings', 'PUT', { codingWork: { preferred: { environmentId: '../x' } } })).status, 400);
   } finally { rpc?.close(); await fixture.close(); await peer.close(); await rm(scratch, { recursive: true, force: true }); }
+});
+
+test('release-notes scenario: the real gateway passes on the offered and the running release notes, and the update notice', { timeout: 30000 }, async () => {
+  const fixture = await createFixture({ scenario: 'release-notes' });
+  try {
+    const { status, body } = await fixture.request('/api/system');
+    assert.equal(status, 200);
+    const { next } = fixtureReleases(body.version);
+    assert.equal(body.updateAvailable, true);
+    assert.equal(body.latest.version, next);
+    assert.match(body.latest.notes, new RegExp(`^\\*\\*v${next.replace(/\./g, '\\.')}\\*\\* · 9 changes from 4 contributors`));
+    assert.match(body.latest.notes, /<summary>Full changelog<\/summary>/);
+    assert.equal(body.current.version, body.version);
+    assert.match(body.current.notes, /^## What's Changed\n\* Landing: show the GitHub star count by @RokaSwK/);
+    assert.deepEqual([body.notice.kind, body.notice.version], ['updated', body.version]);
+  } finally { await fixture.close(); }
 });

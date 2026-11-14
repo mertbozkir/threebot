@@ -77,7 +77,7 @@ export const INTERACTION_IDS = {
 };
 
 export function validateScenario(scenario: string) {
-  if (!['basic', 'interactions', 'executor', 'library', 'landing', 'latest-t3', 'avatars', 'activity', 'adopt'].includes(scenario)) throw new Error('Scenario must be basic, interactions, executor, library, landing, latest-t3, avatars, activity or adopt.');
+  if (!['basic', 'interactions', 'executor', 'library', 'landing', 'latest-t3', 'avatars', 'activity', 'adopt', 'release-notes'].includes(scenario)) throw new Error('Scenario must be basic, interactions, executor, library, landing, latest-t3, avatars, activity, adopt or release-notes.');
 }
 
 // A believable personal setup for product screenshots. Everything here is invented;
@@ -679,4 +679,60 @@ function fixtureTranscribe(body: Buffer): { status: number; body: Record<string,
   const pcm = body.length - 4 - length;
   if (pcm % 4 || pcm > SPEECH_MAX_PCM) return invalid;
   return { status: 200, body: { text: `Fixture transcript: ${(pcm / 4 / 16000).toFixed(1)} seconds in ${options.speechLanguage}` } };
+}
+
+/**
+ * The release-notes scenario: a GitHub-API-shaped release list the gateway reads through
+ * THREEBOT_RELEASES_URL. The next version has notes in scripts/release-notes.mts's format (T3 Code's);
+ * the running one has GitHub's own generated notes, as Threebot's releases had before. Invented content,
+ * except the logins, which are this repo's real contributors so their avatars load.
+ */
+export function fixtureReleases(current: string) {
+  const [major, minor, patch] = current.split(/[.-]/).map(Number);
+  const next = `${major}.${minor}.${patch + 1}`, previous = `${major}.${minor}.${Math.max(0, patch - 1)}`;
+  const repo = 'https://github.com/RokaSwK/threebot';
+  const pr = (n: number) => `${repo}/pull/${n}`;
+  const asset = (v: string, name: string) => ({ name, browser_download_url: `http://127.0.0.1:9/v${v}/${name}` });
+  const release = (v: string, body: string, publishedAt: string) => ({ tag_name: `v${v}`, draft: false, prerelease: false, body, html_url: `${repo}/releases/tag/v${v}`, published_at: publishedAt,
+    assets: [asset(v, `threebot-${v}.tar.gz`), asset(v, 'SHA256SUMS')] });
+  const nextBody = `**v${next}** · 9 changes from 4 contributors
+
+- **Release notes in the app.** See what changed in an update, with who made each change.
+- **Web Push.** Get a notification on your phone when a Bot needs you.
+- **Mac app.** Run Threebot in its own window on your Mac (beta).
+
+### Plus 6 more changes.
+
+<details>
+<summary>Full changelog</summary>
+
+## What's Changed
+* Show release notes with their authors in the app by @RokaSwK in ${pr(59)}
+* Add Web Push notifications by @cristianbdev in ${pr(41)}
+* Mac app: Threebot in a native window by @mertbozkir in ${pr(43)}
+* Keep the model picker's favorites per machine by @cristianbdev in ${pr(52)}
+* Bump vite from 7.1.0 to 7.1.2 by @dependabot in ${pr(53)}
+* Fix the update chip on narrow sidebars by @RokaSwK in ${pr(54)}
+* <img src=x onerror="alert('release body')">Release bodies are untrusted text by @RokaSwK in ${pr(55)}
+* Show linked machines' threads in search by @t3dotgg in ${pr(56)}
+* Threebot ${next} by @RokaSwK in ${pr(57)}
+
+## New Contributors
+* @t3dotgg made their first contribution in ${pr(56)}
+
+**Full Changelog**: ${repo}/compare/v${current}...v${next}
+
+</details>
+`;
+  const currentBody = `## What's Changed
+* Landing: show the GitHub star count by @RokaSwK in ${pr(35)}
+* Add durable Bot memory by @cristianbdev in ${pr(39)}
+* Make memory a Markdown file that the Bot and you both edit by @RokaSwK in ${pr(46)}
+* Threebot ${current} by @RokaSwK in ${pr(48)}
+
+**Full Changelog**: ${repo}/compare/v${previous}...v${current}`;
+  return {
+    next, previous,
+    list: [release(next, nextBody, new Date(Date.now() - 2 * 3600_000).toISOString()), release(current, currentBody, new Date(Date.now() - 3 * 86400_000).toISOString())],
+  };
 }
