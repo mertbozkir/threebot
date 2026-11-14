@@ -1,3 +1,4 @@
+import type { CloudTranscription, CloudTranscriptionPatch } from "./cloudSpeech";
 import type { AdoptableProject, Bot, Machine, Settings, ThreadMeta, ThreadPreview } from "./types";
 
 type Session = { authenticated: boolean; passwordRequired: boolean; accessLogin: boolean };
@@ -80,6 +81,8 @@ export const api = {
   config: (signal?: AbortSignal) => req<{ botsRoot: string; accessLogout?: boolean; executorUrl?: string | null }>("/api/config", { signal }),
   settings: (signal?: AbortSignal) => req<Settings>("/api/settings", { signal }),
   saveSettings: (patch: Partial<Settings>) => req<Settings>("/api/settings", { method: "PUT", body: JSON.stringify(patch) }),
+  cloudTranscription: () => req<CloudTranscription>("/api/voice/cloud", { cache: "no-store" }),
+  saveCloudTranscription: (patch: CloudTranscriptionPatch) => req<CloudTranscription>("/api/voice/cloud", { method: "PUT", body: JSON.stringify(patch) }),
   bots: (signal?: AbortSignal) => req<{ bots: Bot[] }>("/api/bots", { signal }).then((r) => r.bots),
   botIdentities: (signal?: AbortSignal) => req<{ bots: Bot[] }>("/api/bot-identities", { signal }).then((r) => r.bots),
   createBot: (input: Partial<Bot>) => req<Bot>("/api/bots", { method: "POST", body: JSON.stringify(input) }),

@@ -111,7 +111,7 @@ export function decrypt(key: Buffer, envelope: VaultEnvelope | null | undefined)
   }
 }
 
-async function writeAtomic(file: string, text: string) {
+export async function writeAtomic(file: string, text: string) {
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
   const fh = await fs.open(tmp, "w", 0o600);

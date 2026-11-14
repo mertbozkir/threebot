@@ -19,6 +19,8 @@ import { ExecutorConnectCard } from "./ExecutorConnectCard";
 import { useVoiceSettings, VoiceDock, voiceChatSupported } from "./VoiceDock";
 import { requestMicrophone, readVoiceSettings, voiceLang } from "../lib/voiceChat";
 import { appendDictation, dictationEngine, speechLanguage, speechProblem, speechStatus, SPEECH_SAMPLE_RATE, startRecording, transcribe, type Recording } from "../lib/t3Speech";
+import { cloudTranscription, PROVIDER_LABELS, transcribeInCloud } from "../lib/cloudSpeech";
+import { startLiveDictation, type LiveDictation } from "../lib/cloudLive";
 import { isExecutorUrl } from "../lib/executor";
 import { IconButton, Spinner } from "./ui";
 import { ActivityAvatar, useReportLocalActivity } from "./ActivityAvatar";
@@ -547,12 +549,16 @@ function Composer({ bot, threadId, working, embedded, inVoiceChat, onVoiceChat }
   const startDictation = async () => {
     const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
     const currentLang = voiceLang(readVoiceSettings());
+    // A hosted model (OpenAI or Gemini), when chosen in Settings, wins over the browser and T3.
+    const cloud = globalThis.MediaRecorder ? await cloudTranscription().catch(() => null) : null;
+    if (cloud?.provider === "openai") return dictateLive(currentLang);
+    if (cloud?.provider) return dictateRecorded(currentLang, (pcm) => transcribeInCloud(pcm, currentLang), `${PROVIDER_LABELS[cloud.provider]} couldn't transcribe that.`);
     const engine = dictationEngine({ browser: !!SR, t3: t3Voice && !!globalThis.MediaRecorder, preferT3: readVoiceSettings().t3 });
     if (!engine) return toast("Voice input isn't available in this browser");
     if (engine === "t3") {
       const language = speechLanguage(currentLang);
       const problem = await speechStatus().then((status) => speechProblem(status, language), () => "Couldn't reach T3 Code's transcription.");
-      if (!problem) return dictateOnT3(currentLang, language);
+      if (!problem) return dictateRecorded(currentLang, (pcm) => transcribe(pcm, language), "T3 Code couldn't transcribe that.");
       if (!SR) return toast(problem);
       toast(`${problem} Using the browser's voice input.`);
     }
@@ -604,8 +610,44 @@ function Composer({ bot, threadId, working, embedded, inVoiceChat, onVoiceChat }
     }
   };
 
-  /** Records until the second tap, then T3 Code transcribes it and the text joins the draft. */
-  const dictateOnT3 = async (currentLang: string, language: string) => {
+  /** Streams to OpenAI through the gateway; the text lands in the draft while you speak. */
+  const dictateLive = async (currentLang: string) => {
+    const problem = await requestMicrophone();
+    if (problem) return toast(problem);
+    if (!mounted.current) return;
+    const target = draft;
+    const baseText = target.getSnapshot().text;
+    let written = baseText;
+    let session: LiveDictation | null = null;
+    const handle = {
+      // The second tap stops the microphone; the last phrase still arrives, so wait for it.
+      stop: () => { setTranscribing(true); session?.stop(); },
+      abort: () => session?.cancel(),
+    };
+    try {
+      session = await startLiveDictation({
+        lang: currentLang,
+        onText: (spoken) => {
+          // Typing or sending while dictating wins: stop rather than overwrite the draft.
+          if (target.getSnapshot().text !== written) { session?.stop(); return; }
+          written = appendDictation(baseText, spoken, currentLang);
+          target.setText(written);
+        },
+        onError: (message) => toast(message),
+        onLimit: () => toast("Dictation stopped after 5 minutes."),
+        onEnd: () => {
+          if (activeRec.current === handle) activeRec.current = null;
+          if (mounted.current) { setListening(false); setTranscribing(false); }
+        },
+      });
+    } catch (e: any) { return toast(`Could not start voice input: ${e?.message || e}`); }
+    if (!mounted.current) return session.cancel();
+    activeRec.current = handle;
+    setListening(true);
+  };
+
+  /** Records until the second tap, then T3 Code or a hosted model transcribes it and the text joins the draft. */
+  const dictateRecorded = async (currentLang: string, transcribeRecording: (pcm: Float32Array) => Promise<string>, failure: string) => {
     const problem = await requestMicrophone();
     if (problem) return toast(problem);
     const target = draft;
@@ -619,11 +661,11 @@ function Composer({ bot, threadId, working, embedded, inVoiceChat, onVoiceChat }
       try {
         const pcm = await recording!.stop();
         if (pcm.length < SPEECH_SAMPLE_RATE / 4) return toast(`Didn't hear anything (${currentLang})`);
-        const spoken = await transcribe(pcm, language);
+        const spoken = await transcribeRecording(pcm);
         if (!spoken) return toast(`Didn't hear anything (${currentLang})`);
         target.setText(appendDictation(target.getSnapshot().text, spoken, currentLang));
       } catch (e: any) {
-        toast(e?.message || "T3 Code couldn't transcribe that.");
+        toast(e?.message || failure);
       } finally { setTranscribing(false); }
     };
     const handle = { stop: () => void finish(), abort: () => { finished = true; recording?.cancel(); } };
