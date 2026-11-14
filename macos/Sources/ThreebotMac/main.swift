@@ -156,8 +156,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        guard webView.url != nil else { return }
+        // The page checks for a new version when it becomes visible, but an app window that stays
+        // open behind other apps never does, so it would keep running an old build indefinitely.
+        webView.evaluateJavaScript("navigator.serviceWorker?.getRegistration().then((r) => r?.update()).catch(() => {}); 0")
         // The user may have changed Threebot's notifications in System Settings.
-        guard Bundle.main.bundleIdentifier != nil, webView.url != nil else { return }
+        guard Bundle.main.bundleIdentifier != nil else { return }
         Task { await refreshNotificationPermission() }
     }
 
