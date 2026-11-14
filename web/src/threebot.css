@@ -37,7 +37,7 @@
 /* Writing row: one pill, like sending a message. */
 .composer-shell { border-radius: 28px; }
 .composer-controls { flex-wrap: nowrap; align-items: flex-end; gap: 6px; padding: 7px; }
-.composer-controls textarea { order: 0; flex: 1 1 auto; padding-inline: 8px; }
+.composer-controls textarea { order: 0; flex: 1 1 auto; padding-inline: 8px; overflow-wrap: anywhere; }
 .composer-controls .composer-dictate { margin-left: 0; }
 .composer-controls > button, .composer-controls button[aria-label="Composer actions"] { border-radius: 999px; }
 

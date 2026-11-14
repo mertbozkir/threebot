@@ -32,7 +32,7 @@ import { getTriggerDisplayModelName } from "../lib/modelTraits";
 import { canStartSideChat, parseSideCommand } from "../lib/sideChats";
 import { SideChatPill, SideChatSheet } from "./SideChat";
 import type { Bot } from "../lib/types";
-import { composerFocusBehavior, isClearCommand, MOBILE_CHAT_QUERY, splitBubbles, takeAttachmentFiles } from "../lib/chatBehavior";
+import { composerFocusBehavior, isClearCommand, listNewline, MOBILE_CHAT_QUERY, splitBubbles, takeAttachmentFiles } from "../lib/chatBehavior";
 import { chatDraft } from "../lib/chatDrafts";
 import { parseReply, replyLabel, withReply } from "../lib/reply";
 import { activeWork, messageCommand, useRuntimeWork, useWorkCommand } from "../lib/runtimeApi";
@@ -711,6 +711,22 @@ function Composer({ bot, threadId, working, embedded, inVoiceChat, onVoiceChat }
                   e.preventDefault();
                   submit();
                   return;
+                }
+                // A new line in a list item continues the list: Shift+Enter on desktop, Enter on mobile.
+                if (e.key === "Enter" && (mobile || e.shiftKey) && !e.nativeEvent.isComposing) {
+                  const el = e.currentTarget;
+                  const edit = listNewline(el.value, el.selectionStart, el.selectionEnd);
+                  if (edit) {
+                    e.preventDefault();
+                    el.setSelectionRange(edit.from, edit.to);
+                    // insertText keeps the browser's undo history and fires onChange; fall back where it is missing.
+                    const done = edit.insert ? document.execCommand?.("insertText", false, edit.insert) : document.execCommand?.("delete");
+                    if (!done) {
+                      el.setRangeText(edit.insert, edit.from, edit.to, "end");
+                      setText(el.value);
+                    }
+                    return;
+                  }
                 }
                 if (!mobile && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();

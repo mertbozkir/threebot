@@ -74,3 +74,27 @@ export function splitBubbles(text: string): string[] {
 export function isClearCommand(text: string) {
   return /^\/clear\s*$/i.test(text.trim());
 }
+
+// "- ", "* ", "+ ", "1. ", "1) ", optionally followed by a task box, after any indent.
+const LIST_ITEM = /^([ \t]*)(?:([-*+])|(\d{1,9})([.)]))[ \t]+(?:\[[ xX]\](?:[ \t]+|$))?/;
+
+/**
+ * A new line inside a Markdown list item: continue the list, or end it on an empty item.
+ * Returns the range to replace and its new text, or null when the line is not a list item.
+ * The text stays plain Markdown, so what you type is what is sent.
+ */
+export function listNewline(value: string, start: number, end = start): { from: number; to: number; insert: string } | null {
+  if (start !== end) return null;
+  const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+  const newline = value.indexOf("\n", start);
+  const lineEnd = newline === -1 ? value.length : newline;
+  const line = value.slice(lineStart, lineEnd);
+  const match = LIST_ITEM.exec(line);
+  if (!match || start < lineStart + match[0].length) return null;
+  // Enter on an empty item ends the list and leaves an empty line.
+  if (!line.slice(match[0].length).trim()) return { from: lineStart, to: lineEnd, insert: "" };
+  const [, indent, bullet, number, delimiter] = match;
+  const task = /\[[ xX]\]/.test(match[0]) ? "[ ] " : "";
+  const marker = bullet ?? `${Number(number) + 1}${delimiter}`;
+  return { from: start, to: end, insert: `\n${indent}${marker} ${task}` };
+}

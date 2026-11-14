@@ -395,3 +395,28 @@ test("mobile Enter key does not submit, while Ctrl+Enter or desktop Enter submit
   await runtime.act(async () => sends[1].resolve({ sequence: 2 }));
   assert.equal(textarea().value, "");
 });
+
+test("a new line in a list item continues the list: Enter on mobile, Shift+Enter on desktop", async () => {
+  const enter = (shiftKey = false) => runtime.act(async () => {
+    textarea().selectionStart = textarea().selectionEnd = textarea().value.length;
+    textarea().dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", shiftKey, bubbles: true, cancelable: true }));
+  });
+  await render();
+  await type("- milk");
+  await enter();
+  assert.equal(textarea().value, "- milk\n- ");
+  await enter();
+  assert.equal(textarea().value, "- milk\n", "Enter on an empty item ends the list");
+  assert.equal(sends.length, 0);
+
+  window.happyDOM.setWindowSize({ width: 1200, height: 900 });
+  await render({ key: "desktop-lists" });
+  await type("1. First step");
+  await enter(true);
+  assert.equal(textarea().value, "1. First step\n2. ");
+  await type("1. First step\n2. Second");
+  await enter();
+  assert.equal(sends.length, 1, "plain Enter still sends on desktop");
+  assert.equal(sends[0].command.text, "1. First step\n2. Second", "the message is the Markdown as typed");
+  await runtime.act(async () => sends[0].resolve({ sequence: 1 }));
+});
