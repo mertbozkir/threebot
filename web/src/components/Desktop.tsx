@@ -87,6 +87,14 @@ function DesktopScreen({ slug, control, onDisconnect }: { slug: string; control:
   </div>;
 }
 
+function HelpCard({ instruction, onTakeOver, busy }: { instruction: string; onTakeOver: () => void; busy: boolean }) {
+  return <div className="shrink-0 border-t border-white/10 px-4 py-3">
+    <p className="text-[12px] text-white/50">Waiting for you</p>
+    <p className="mt-1 break-words text-[15px] leading-5">{instruction}</p>
+    <button type="button" onClick={onTakeOver} disabled={busy} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 text-[15px] text-white disabled:opacity-40">{busy ? <Spinner size={14} /> : <Hand size={16} />}{busy ? "Waking up…" : "Take over"}</button>
+  </div>;
+}
+
 export function DesktopView({ bot, onBrowser }: { bot: Bot; onBrowser: () => void }) {
   const { status, error, refresh } = useDesktopStatus(bot.slug);
   const [control, setControl] = useState(false);
@@ -106,6 +114,8 @@ export function DesktopView({ bot, onBrowser }: { bot: Bot; onBrowser: () => voi
     try { await api.wakeDesktop(bot.slug); } catch (e) { setWakeError(e instanceof Error ? e.message : "Couldn’t wake the computer"); }
     finally { setWaking(false); await refresh(); }
   };
+  const help = status?.helpRequest ?? null;
+  const takeOver = async () => { if (!live) await wake(); setControl(true); };
   const statusText = !status ? "Checking…" : live ? control ? "You're in control" : "Watching" : LABEL[status.state];
   return <div role="dialog" aria-modal="true" aria-label={`${bot.name}’s computer`} className="fixed inset-0 z-50 flex flex-col bg-black text-white" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
     <header className="flex min-h-16 shrink-0 items-center gap-3 px-4 py-3">
@@ -127,6 +137,7 @@ export function DesktopView({ bot, onBrowser }: { bot: Bot; onBrowser: () => voi
           {(status?.state === "building" || status?.state === "starting") && <div className="mt-5 grid place-items-center"><Spinner size={18} /></div>}
         </div></div>}
     </main>
+    {help && !control ? <HelpCard instruction={help.instruction} onTakeOver={() => void takeOver()} busy={waking} /> : null}
     <footer className="flex min-h-16 shrink-0 items-center justify-between gap-3 px-4 py-3">
       <div className="min-w-0 text-[12px] text-white/50"><span role="status">{statusText}</span><span className="block">Shared desktop · files and sign-ins are shared by all Bots</span></div>
       {live ? control

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import sharp from "sharp";
-import { CONTROLLED_MESSAGE, createDesktop, createDesktopTools, createRfbClientFilter, imageHash, runArgs, xdotoolArgs, type Run } from "./desktop.mts";
+import { CONTROLLED_MESSAGE, createDesktop, createDesktopTools, createRfbClientFilter, HELP_REQUESTED_MESSAGE, imageHash, runArgs, xdotoolArgs, type DesktopOptions, type Run } from "./desktop.mts";
 
 const handshake = () => Buffer.concat([Buffer.from("RFB 003.008\n", "latin1"), Buffer.from([1]), Buffer.from([0])]);
 const key = Buffer.from([4, 1, 0, 0, 0, 0, 0, 0x61]);
@@ -77,7 +77,7 @@ function fakeRuntime(png: Buffer) {
   return { run, calls, get running() { return running; } };
 }
 
-async function setup(t: { after: (fn: () => Promise<void>) => void }, idleMs = 60_000) {
+async function setup(t: { after: (fn: () => Promise<void>) => void }, idleMs = 60_000, options: Partial<DesktopOptions> = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "desktop-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const imageDir = path.join(root, "image");
@@ -85,7 +85,7 @@ async function setup(t: { after: (fn: () => Promise<void>) => void }, idleMs = 6
   await writeFile(path.join(imageDir, "Dockerfile"), "FROM scratch\n");
   const png = await sharp({ create: { width: 1920, height: 1200, channels: 3, background: "#ccc" } }).png().toBuffer();
   const runtime = fakeRuntime(png);
-  const desktop = createDesktop({ imageDir, socketDir: path.join(root, "vnc"), run: runtime.run, screens: 2, idleMs });
+  const desktop = createDesktop({ imageDir, socketDir: path.join(root, "vnc"), run: runtime.run, screens: 2, idleMs, ...options });
   return { desktop, runtime, root };
 }
 
@@ -140,6 +140,48 @@ test("tools identify the Bot by its own token, never by an argument", async (t) 
   assert.equal(legacy.isError, true);
   const own = await call("computer_screenshot", {}, { auth: { botSlug: "alpha" } });
   assert.equal(own.content[0].type, "image");
+  await desktop.disable();
+});
+
+test("computer_request_help validates the instruction and records it for the calling Bot only", async (t) => {
+  const { desktop } = await setup(t);
+  await desktop.enable();
+  const call = createDesktopTools(desktop);
+  const missing = await call("computer_request_help", {}, { auth: { botSlug: "alpha" } });
+  assert.equal(missing.isError, true);
+  const blank = await call("computer_request_help", { instruction: "   " }, { auth: { botSlug: "alpha" } });
+  assert.equal(blank.isError, true);
+  const tooLong = await call("computer_request_help", { instruction: "a".repeat(501) }, { auth: { botSlug: "alpha" } });
+  assert.equal(tooLong.isError, true);
+  assert.equal(tooLong.content[0].type, "text");
+  assert.match((tooLong.content[0] as { text: string }).text, /500/);
+  assert.equal(desktop.status("alpha").helpRequest, null);
+  const asked = await call("computer_request_help", { instruction: "  Sign in to Google  " }, { auth: { botSlug: "alpha" } });
+  assert.equal(asked.isError, undefined);
+  assert.equal(asked.content[0].type, "text");
+  assert.match((asked.content[0] as { text: string }).text, new RegExp(HELP_REQUESTED_MESSAGE.slice(0, 30)));
+  const help = desktop.status("alpha").helpRequest;
+  assert.equal(help?.instruction, "Sign in to Google");
+  assert.ok(!Number.isNaN(Date.parse(help!.at)));
+  assert.equal(desktop.status("beta").helpRequest, null);
+  await call("computer_request_help", { instruction: "Enter the 2FA code" }, { auth: { botSlug: "alpha" } });
+  assert.equal(desktop.status("alpha").helpRequest?.instruction, "Enter the 2FA code");
+  await desktop.disable();
+});
+
+test("handing the screen back clears a pending help request and notifies exactly once", async (t) => {
+  const returned: { slug: string; instruction: string }[] = [];
+  const { desktop } = await setup(t, 60_000, { onHelpReturned: (slug, instruction) => returned.push({ slug, instruction }) });
+  await desktop.enable();
+  await desktop.wake();
+  desktop.requestHelp("alpha", "Sign in to Google");
+  const release = desktop.takeControl("alpha");
+  release();
+  assert.deepEqual(returned, [{ slug: "alpha", instruction: "Sign in to Google" }]);
+  assert.equal(desktop.status("alpha").helpRequest, null);
+  const releaseAgain = desktop.takeControl("alpha");
+  releaseAgain();
+  assert.equal(returned.length, 1);
   await desktop.disable();
 });
 

@@ -439,7 +439,15 @@ const projectsOn = async () => (await getSettings()).beta.projects;
 /** The Bots' computer is a beta feature too; off means no container, no tools, no routes. */
 const desktopOn = async () => (await getSettings()).beta.desktop;
 // Apple's `container` runs only on macOS; elsewhere the switch shows the computer as unavailable.
-const desktop = createDesktop({ imageDir: path.join(here, "desktop"), socketDir: path.join(appDir, "vnc"), supported: process.platform === "darwin", log: (line) => console.log(line) });
+const desktop = createDesktop({
+  imageDir: path.join(here, "desktop"), socketDir: path.join(appDir, "vnc"), supported: process.platform === "darwin", log: (line) => console.log(line),
+  onHelpReturned: (slug, instruction) => {
+    void (async () => {
+      const bot = (await listBots()).find((candidate) => candidate.slug === slug);
+      if (bot?.mainThreadId) await dispatchThreadMessage(bot.mainThreadId, `From Threebot: the person handed your screen back after: ${instruction}. Take a new screenshot and carry on.`);
+    })().catch((e) => console.error("desktop help notification failed", (e as Error).message));
+  },
+});
 function botDir(slug: string) {
   if (!SLUG_RE.test(slug)) throw Object.assign(new Error("bad slug"), { status: 400 });
   return path.join(cfg.botsRoot, slug);
@@ -866,6 +874,13 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
   let timer: ReturnType<typeof setTimeout> | undefined;
   return Promise.race([promise, new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error(message)), ms)))]).finally(() => clearTimeout(timer));
 }
+/** Queue a message into a thread as the server; the one path outage alerts and desktop hand-backs use. */
+async function dispatchThreadMessage(threadId: string, text: string) {
+  return (await withTimeout(t3rpc(), 10000, "T3 timed out")).dispatch({
+    type: "message.dispatch", threadId, messageId: randomUUID(), text, attachments: [],
+    createdBy: "agent", creationSource: "server", dispatchMode: { type: "queue_after_active" },
+  });
+}
 async function listServerTabs(threadId: string) {
   let r;
   try {
@@ -943,7 +958,7 @@ const projectTools = {
 const desktopTools = {
   tools: DESKTOP_TOOLS,
   call: createDesktopTools(desktop),
-  instructions: "Also your own screen on a shared Linux desktop (computer_screenshot, computer_actions).",
+  instructions: "Also your own screen on a shared Linux desktop (computer_screenshot, computer_actions, computer_request_help to ask the person to take over for a step only they can do).",
 };
 
 function combineExtras(...sources: (ExtraTools | null)[]): ExtraTools | null {
@@ -1609,10 +1624,7 @@ async function readLinkedThread(environmentId: string, threadId: string, after: 
 }
 const outageAlerts = createOutageAlerts({
   file: path.join(appDir, "machines", "outages.json"), log: (line) => console.log(line),
-  post: async (mainThreadId, text) => (await withTimeout(t3rpc(), 10000, "T3 timed out")).dispatch({
-    type: "message.dispatch", threadId: mainThreadId, messageId: randomUUID(), text, attachments: [],
-    createdBy: "agent", creationSource: "server", dispatchMode: { type: "queue_after_active" },
-  }),
+  post: dispatchThreadMessage,
 });
 /** The Bots whose main threads have tasks still running on a machine. Throws after the rest if any couldn't be read, so they're tried again. */
 async function botWorkOn(environmentId: string): Promise<BotWork[]> {

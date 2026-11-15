@@ -30,6 +30,7 @@ const READY_TIMEOUT_MS = 45_000;
 const EXEC_TIMEOUT_MS = 60_000;
 
 export const CONTROLLED_MESSAGE = "The person is using your screen. Take a new screenshot after they hand it back.";
+export const HELP_REQUESTED_MESSAGE = "The person has been asked to take over your screen. Stop using the computer until they hand it back; you'll get a message in this thread when they do.";
 
 /** sha256 of every file under dir (sorted relative paths and contents), so a changed image rebuilds. */
 export async function imageHash(dir: string): Promise<string> {
@@ -204,9 +205,11 @@ export interface DesktopOptions {
   screens?: number;
   idleMs?: number;
   log?: (line: string) => void;
+  /** The person handed a screen back while its Bot had a pending help request; the gateway tells the Bot's thread. */
+  onHelpReturned?: (slug: string, instruction: string) => void;
 }
 
-export interface DesktopStatus { state: DesktopState; reason: string | null; screens: number; display: number | null; controlled: boolean }
+export interface DesktopStatus { state: DesktopState; reason: string | null; screens: number; display: number | null; controlled: boolean; helpRequest: { instruction: string; at: string } | null }
 
 export function spawnRun(cli = "container"): Run {
   return (args, { timeoutMs = START_TIMEOUT_MS } = {}) => new Promise((resolve) => {
@@ -220,7 +223,7 @@ export function spawnRun(cli = "container"): Run {
   });
 }
 
-export function createDesktop({ imageDir, socketDir, supported = true, run = spawnRun(), screens = 4, idleMs = 120_000, log = () => {} }: DesktopOptions) {
+export function createDesktop({ imageDir, socketDir, supported = true, run = spawnRun(), screens = 4, idleMs = 120_000, log = () => {}, onHelpReturned }: DesktopOptions) {
   let state: DesktopState = "off";
   let reason: string | null = null;
   let hash: string | null = null;
@@ -230,6 +233,7 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
   let busy = 0;
   const leases = new Map<string, number>();
   const controlled = new Map<string, number>();
+  const helpRequests = new Map<string, { instruction: string; at: string }>();
   const screenBusy = new Set<number>();
 
   /** One transition at a time. */
@@ -400,7 +404,7 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
     wake,
     stop,
     status(slug: string | null): DesktopStatus {
-      return { state, reason, screens, display: slug ? leases.get(slug) ?? null : null, controlled: slug ? controlled.has(slug) : false };
+      return { state, reason, screens, display: slug ? leases.get(slug) ?? null : null, controlled: slug ? controlled.has(slug) : false, helpRequest: slug ? helpRequests.get(slug) ?? null : null };
     },
     /** The Bot's screen socket, for the gateway's viewer connection. Watching vs control is the gateway's filter. */
     vncSocket(slug: string): string | null {
@@ -413,9 +417,20 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
       if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
       return () => {
         const left = (controlled.get(slug) ?? 1) - 1;
-        if (left > 0) controlled.set(slug, left); else controlled.delete(slug);
+        if (left > 0) { controlled.set(slug, left); return; }
+        controlled.delete(slug);
+        // Handing the screen back is also the answer to a pending help request.
+        const help = helpRequests.get(slug);
+        if (help) { helpRequests.delete(slug); onHelpReturned?.(slug, help.instruction); }
         scheduleIdle();
       };
+    },
+    /** The Bot asks the person to take over; a newer request replaces an older one. */
+    requestHelp(slug: string, instruction: unknown) {
+      const text = typeof instruction === "string" ? instruction.trim() : "";
+      if (!text) throw new Error("instruction is required");
+      if (text.length > 500) throw new Error("instruction must be at most 500 characters");
+      helpRequests.set(slug, { instruction: text, at: new Date().toISOString() });
     },
     screenshot(slug: string) { return withScreen(slug, capture); },
     actions(slug: string, actions: unknown) {
@@ -454,15 +469,25 @@ export const DESKTOP_TOOLS = [
       properties: { actions: { type: "array", maxItems: MAX_ACTIONS, items: { type: "object", required: ["type"], properties: { type: { type: "string", enum: ["move", "click", "double_click", "right_click", "drag", "scroll", "type", "key", "wait"] } } } } },
     },
   },
+  {
+    name: "computer_request_help",
+    title: "Ask for a hand",
+    description: `Ask the person to take over your screen for a step only they can do (signing in, 2FA, a CAPTCHA). Stop using the computer until they hand it back; that arrives as a message in your thread.`,
+    inputSchema: { type: "object", required: ["instruction"], properties: { instruction: { type: "string", maxLength: 500 } } },
+  },
 ] as const;
 
 type ToolContent = { content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[]; isError?: boolean };
 
-export function createDesktopTools(desktop: Pick<Desktop, "screenshot" | "actions">) {
+export function createDesktopTools(desktop: Pick<Desktop, "screenshot" | "actions" | "requestHelp">) {
   return async (name: string, args: Record<string, unknown>, { auth }: { auth: { botSlug: string | null } }): Promise<ToolContent> => {
     // The screen is chosen by the caller's own bearer, never by an argument, so a Bot can't drive another Bot's screen.
     if (!auth.botSlug) return { content: [{ type: "text", text: "The computer needs your own Bot token. Restart your session so it picks it up." }], isError: true };
     try {
+      if (name === "computer_request_help") {
+        desktop.requestHelp(auth.botSlug, args.instruction);
+        return { content: [{ type: "text", text: HELP_REQUESTED_MESSAGE }] };
+      }
       const data = name === "computer_actions" ? await desktop.actions(auth.botSlug, args.actions) : await desktop.screenshot(auth.botSlug);
       return { content: [{ type: "image", data, mimeType: "image/png" }] };
     } catch (error) {
