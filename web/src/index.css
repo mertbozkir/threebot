@@ -770,8 +770,9 @@ button {
 @media (width > 760px) and (not (pointer: coarse)), (width > 1024px) {
   .connect-apps-sheet { width: min(900px, calc(100vw - 64px)); }
   .connect-apps-sheet > .bot-modal-header { order: 0; }
-  .connect-apps-sheet .apps-search { position: static; order: 1; flex-shrink: 0; height: 36px; margin: 0 24px 8px; box-shadow: none; }
-  .connect-apps-sheet .apps-filters { order: 2; padding: 0 24px 12px; }
+  .connect-apps-sheet .apps-search { position: static; order: 1; flex-shrink: 0; height: 36px; margin: 16px 24px 12px; box-shadow: none; }
+  /* Fade the end of the category row so a cut-off chip reads as scrollable. */
+  .connect-apps-sheet .apps-filters { order: 2; padding: 0 24px 12px; mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent); }
   .connect-apps-sheet .apps-catalog { order: 3; padding: 0 24px 24px; }
   .connect-apps-sheet .apps-section { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 24px; }
   .connect-apps-sheet .apps-section-title, .connect-apps-sheet .apps-notice { grid-column: 1 / -1; }
