@@ -1437,7 +1437,7 @@ const server = http.createServer(async (req, res) => {
       if (desktopRoute[2] === "/type" && req.method === "POST") {
         if (!desktop.status(slug).controlled) return send(res, 409, { error: "Take control of the screen first." });
         requireJson(req);
-        const text = pasteText((await readBody(req, 8192)).text);
+        const text = pasteText((await readBody(req, 16384)).text);
         await desktop.typeText(slug, text);
         return send(res, 200, { ok: true }, { "cache-control": "no-store" });
       }
