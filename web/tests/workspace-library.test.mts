@@ -78,13 +78,13 @@ for (const [name, kind] of [['parity-note.txt', 'text'], ['parity-silence.wav', 
   else assert.ok(document.querySelector('audio').controls);
 });
 
-test('workspace asset signing keeps linked environment scope and raw thread identity for text and audio', async () => {
+test('workspace asset signing keeps linked environment scope and raw thread identity for text, audio and Office files', async () => {
   mock.method(loaded.T3Client.prototype, 'connect', () => {});
   const remote = loaded.environmentT3('fixture-remote');
   const signed = [];
   mock.method(remote, 'call', async (tag, payload) => { signed.push({ tag, payload }); return { relativeUrl: '/api/assets/fixture?token=a%2Bb%2F' }; });
   const threadId = loaded.threadKey({ environmentId: 'fixture-remote', threadId: 'same-id' });
-  for (const [name, disposition] of [['notes.txt', 'attachment'], ['audio.wav', undefined]]) {
+  for (const [name, disposition] of [['notes.txt', 'attachment'], ['audio.wav', undefined], ['budget.xlsx', 'attachment'], ['memo.docx', 'attachment']]) {
     const url = await loaded.workspaceAssetUrl({ _tag: 'workspace-file', threadId, path: 'library/' + name });
     assert.equal(url, '/t3/environments/fixture-remote/api/assets/fixture?token=a%2Bb%2F');
     assert.deepEqual(signed.at(-1), { tag: 'assets.createUrl', payload: { resource: { _tag: 'media-file', threadId: 'same-id', path: 'library/' + name, ...(disposition ? { disposition } : {}) } } });
