@@ -31,6 +31,7 @@ const EXEC_TIMEOUT_MS = 60_000;
 
 export const CONTROLLED_MESSAGE = "The person is using your screen. Take a new screenshot after they hand it back.";
 export const HELP_REQUESTED_MESSAGE = "The person has been asked to take over your screen. Stop using the computer until they hand it back; you'll get a message in this thread when they do.";
+const IDLE_ACTIVITY: DesktopActivity = { busy: false, last: null };
 
 /** sha256 of every file under dir (sorted relative paths and contents), so a changed image rebuilds. */
 export async function imageHash(dir: string): Promise<string> {
@@ -130,6 +131,15 @@ export function xdotoolArgs(actions: unknown): string[][] {
   return runs;
 }
 
+/** The pointer position a watcher sees for an action, in model coordinates; a drag points where it ends. */
+function pointerSpot(action: Record<string, unknown>): { type: string; x: number; y: number } | null {
+  switch (action.type) {
+    case "move": case "click": case "double_click": case "right_click": case "scroll": return { type: action.type as string, x: action.x as number, y: action.y as number };
+    case "drag": return { type: "drag", x: action.toX as number, y: action.toY as number };
+    default: return null;
+  }
+}
+
 // ---------- the viewer's RFB stream ----------
 /**
  * Checks what a viewer's browser sends to a screen's VNC server, message by message. Watchers may
@@ -209,7 +219,8 @@ export interface DesktopOptions {
   onHelpReturned?: (slug: string, instruction: string) => void;
 }
 
-export interface DesktopStatus { state: DesktopState; reason: string | null; screens: number; display: number | null; controlled: boolean; helpRequest: { instruction: string; at: string } | null }
+export interface DesktopActivity { busy: boolean; last: { type: string; x: number; y: number; at: string } | null }
+export interface DesktopStatus { state: DesktopState; reason: string | null; screens: number; display: number | null; controlled: boolean; helpRequest: { instruction: string; at: string } | null; activity: DesktopActivity }
 
 export function spawnRun(cli = "container"): Run {
   return (args, { timeoutMs = START_TIMEOUT_MS } = {}) => new Promise((resolve) => {
@@ -234,6 +245,7 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
   const leases = new Map<string, number>();
   const controlled = new Map<string, number>();
   const helpRequests = new Map<string, { instruction: string; at: string }>();
+  const activities = new Map<string, DesktopActivity>();
   const screenBusy = new Set<number>();
 
   /** One transition at a time. */
@@ -404,7 +416,7 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
     wake,
     stop,
     status(slug: string | null): DesktopStatus {
-      return { state, reason, screens, display: slug ? leases.get(slug) ?? null : null, controlled: slug ? controlled.has(slug) : false, helpRequest: slug ? helpRequests.get(slug) ?? null : null };
+      return { state, reason, screens, display: slug ? leases.get(slug) ?? null : null, controlled: slug ? controlled.has(slug) : false, helpRequest: slug ? helpRequests.get(slug) ?? null : null, activity: (slug ? activities.get(slug) : undefined) ?? IDLE_ACTIVITY };
     },
     /** The Bot's screen socket, for the gateway's viewer connection. Watching vs control is the gateway's filter. */
     vncSocket(slug: string): string | null {
@@ -433,17 +445,34 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
       helpRequests.set(slug, { instruction: text, at: new Date().toISOString() });
     },
     screenshot(slug: string) { return withScreen(slug, capture); },
-    actions(slug: string, actions: unknown) {
+    async actions(slug: string, actions: unknown) {
       const args = xdotoolArgs(actions);
-      return withScreen(slug, async (display) => {
-        for (const run of args) {
-          const result = await exec(["xdotool", ...run], { display });
-          if (result.code !== 0) throw new Error(`Actions failed: ${result.stderr.trim().slice(-300)}`);
-        }
-        // Let the screen settle before the screenshot.
-        await new Promise((resolve) => setTimeout(resolve, 400));
-        return capture(display);
-      });
+      // A watcher follows the batch: busy for its whole run, the pointer at each action as it happens.
+      activities.set(slug, { busy: true, last: activities.get(slug)?.last ?? null });
+      // The same split into runs as xdotoolArgs makes, so the recorded pointer tracks execution.
+      const groups: Record<string, unknown>[][] = [[]];
+      for (const action of actions as Record<string, unknown>[]) {
+        groups.at(-1)!.push(action);
+        if (action.type === "type") groups.push([]);
+      }
+      if (!groups.at(-1)!.length) groups.pop();
+      try {
+        return await withScreen(slug, async (display) => {
+          for (let i = 0; i < args.length; i++) {
+            for (const action of groups[i]) {
+              const spot = pointerSpot(action);
+              if (spot) activities.set(slug, { busy: true, last: { ...spot, at: new Date().toISOString() } });
+            }
+            const result = await exec(["xdotool", ...args[i]], { display });
+            if (result.code !== 0) throw new Error(`Actions failed: ${result.stderr.trim().slice(-300)}`);
+          }
+          // Let the screen settle before the screenshot.
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          return capture(display);
+        });
+      } finally {
+        activities.set(slug, { busy: false, last: activities.get(slug)?.last ?? null });
+      }
     },
   };
 }

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import sharp from "sharp";
-import { CONTROLLED_MESSAGE, createDesktop, createDesktopTools, createRfbClientFilter, HELP_REQUESTED_MESSAGE, imageHash, runArgs, xdotoolArgs, type DesktopOptions, type Run } from "./desktop.mts";
+import { CONTROLLED_MESSAGE, createDesktop, createDesktopTools, createRfbClientFilter, HELP_REQUESTED_MESSAGE, imageHash, runArgs, xdotoolArgs, type Desktop, type DesktopOptions, type DesktopStatus, type Run } from "./desktop.mts";
 
 const handshake = () => Buffer.concat([Buffer.from("RFB 003.008\n", "latin1"), Buffer.from([1]), Buffer.from([0])]);
 const key = Buffer.from([4, 1, 0, 0, 0, 0, 0, 0x61]);
@@ -182,6 +182,51 @@ test("handing the screen back clears a pending help request and notifies exactly
   const releaseAgain = desktop.takeControl("alpha");
   releaseAgain();
   assert.equal(returned.length, 1);
+  await desktop.disable();
+});
+
+test("actions show up in status: busy while the batch runs, with each pointer type's position", async (t) => {
+  const png = await sharp({ create: { width: 1920, height: 1200, channels: 3, background: "#ccc" } }).png().toBuffer();
+  const real = fakeRuntime(png);
+  let desktop!: Desktop;
+  let failActions = false;
+  const seen: DesktopStatus["activity"][] = [];
+  const run: Run = async (args) => {
+    if (args.includes("xdotool")) {
+      seen.push(desktop.status("alpha").activity);
+      if (failActions) return { code: 1, stdout: Buffer.alloc(0), stderr: "button press failed" };
+    }
+    return real.run(args);
+  };
+  ({ desktop } = await setup(t, 60_000, { run }));
+  await desktop.enable();
+  const typed = { type: "type", text: "x" };
+  await desktop.actions("alpha", [
+    { type: "move", x: 100, y: 200 }, typed,
+    { type: "click", x: 300, y: 400 }, typed,
+    { type: "double_click", x: 10, y: 20 }, typed,
+    { type: "right_click", x: 500, y: 600 }, typed,
+    { type: "drag", x: 1, y: 2, toX: 640, toY: 400 }, typed,
+    { type: "scroll", x: 700, y: 100, direction: "down" }, { type: "key", keys: "Return" }, { type: "wait", ms: 5 },
+  ]);
+  assert.equal(seen.length, 6);
+  assert.ok(seen.every((activity) => activity.busy));
+  assert.deepEqual(seen.map((activity) => activity.last && { type: activity.last.type, x: activity.last.x, y: activity.last.y }), [
+    { type: "move", x: 100, y: 200 },
+    { type: "click", x: 300, y: 400 },
+    { type: "double_click", x: 10, y: 20 },
+    { type: "right_click", x: 500, y: 600 },
+    { type: "drag", x: 640, y: 400 },
+    { type: "scroll", x: 700, y: 100 },
+  ]);
+  const after = desktop.status("alpha").activity;
+  assert.equal(after.busy, false);
+  assert.ok(!Number.isNaN(Date.parse(after.last!.at)));
+  await desktop.actions("beta", [{ type: "type", text: "hi" }, { type: "key", keys: "ctrl+a" }, { type: "wait", ms: 1 }]);
+  assert.deepEqual(desktop.status("beta").activity, { busy: false, last: null });
+  failActions = true;
+  await assert.rejects(desktop.actions("alpha", [{ type: "click", x: 5, y: 5 }]), /Actions failed/);
+  assert.equal(desktop.status("alpha").activity.busy, false);
   await desktop.disable();
 });
 

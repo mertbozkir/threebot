@@ -57,7 +57,7 @@ export type RemoteRead = {
 };
 
 /** The Bots' shared computer (Settings › Beta › Computer). */
-export type DesktopStatus = { state: "off" | "unavailable" | "building" | "stopped" | "starting" | "healthy" | "stopping" | "failed"; reason: string | null; screens: number; display: number | null; controlled: boolean; helpRequest: { instruction: string; at: string } | null };
+export type DesktopStatus = { state: "off" | "unavailable" | "building" | "stopped" | "starting" | "healthy" | "stopping" | "failed"; reason: string | null; screens: number; display: number | null; controlled: boolean; helpRequest: { instruction: string; at: string } | null; activity: { busy: boolean; last: { type: string; x: number; y: number; at: string } | null } };
 
 export const api = {
   desktop: (slug: string) => req<DesktopStatus>(`/api/desktop/${encodeURIComponent(slug)}`),

@@ -6,6 +6,7 @@ import { ActivityAvatar } from "./ActivityAvatar";
 import { Spinner } from "./ui";
 import { botStatus, openDialog, useApp } from "../store";
 import { api, type DesktopStatus } from "../lib/api";
+import { modelPointToCanvas } from "../lib/desktopPointer";
 import type { Bot } from "../lib/types";
 
 // The Bot's own screen on the shared Linux desktop (Settings › Beta › Computer), shown with noVNC.
@@ -25,6 +26,7 @@ type Rfb = {
 };
 
 const POLL_MS = 5000;
+const BUSY_POLL_MS = 700;
 const LABEL: Record<DesktopStatus["state"], string> = {
   off: "Off", unavailable: "Unavailable", building: "Preparing the computer…", stopped: "Sleeping", starting: "Waking up…", healthy: "Live", stopping: "Going to sleep…", failed: "Didn't start",
 };
@@ -45,10 +47,11 @@ function useDesktopStatus(slug: string) {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const load = async () => {
       if (timer) clearTimeout(timer);
-      try { const next = await api.desktop(slug); if (live) { setStatus(next); setError(null); } }
+      let next: DesktopStatus | null = null;
+      try { next = await api.desktop(slug); if (live) { setStatus(next); setError(null); } }
       catch (e) { if (live) setError(e instanceof Error ? e.message : "Couldn’t reach the computer"); }
-      // Poll only while this view is open and visible.
-      if (live) timer = setTimeout(() => { if (document.visibilityState === "visible") void load(); else timer = setTimeout(load, POLL_MS); }, POLL_MS);
+      // Poll only while this view is open and visible; a busy Bot gets a closer watch.
+      if (live) timer = setTimeout(() => { if (document.visibilityState === "visible") void load(); else timer = setTimeout(load, POLL_MS); }, next?.activity.busy ? BUSY_POLL_MS : POLL_MS);
     };
     refresh.current = load;
     void load();
@@ -57,7 +60,48 @@ function useDesktopStatus(slug: string) {
   return { status, error, refresh: () => refresh.current() };
 }
 
-function DesktopScreen({ slug, control, onDisconnect }: { slug: string; control: boolean; onDisconnect: () => void }) {
+/** Where the Bot is acting: a dot at its last pointer position, a pulse on clicks, a pill while it works. */
+function BotPointer({ activity, container }: { activity: DesktopStatus["activity"]; container: { current: HTMLDivElement | null } }) {
+  const [canvas, setCanvas] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [click, setClick] = useState<string | null>(null);
+  const seenAt = useRef<string | null>(null);
+  const last = activity.last;
+  const spot = last && canvas ? modelPointToCanvas(last.x, last.y, canvas) : null;
+  // The canvas appears and resizes only after the viewer connects, so keep measuring its letterboxed box.
+  useEffect(() => {
+    const measure = () => {
+      const host = container.current, screen = host?.querySelector("canvas") ?? null;
+      if (!host || !screen) return;
+      const box = host.getBoundingClientRect(), rect = screen.getBoundingClientRect();
+      setCanvas({ left: rect.left - box.left, top: rect.top - box.top, width: rect.width, height: rect.height });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (container.current) {
+      observer.observe(container.current);
+      const screen = container.current.querySelector("canvas");
+      if (screen) observer.observe(screen);
+    }
+    return () => observer.disconnect();
+  }, [container, last?.at]);
+  useEffect(() => {
+    if (!last || seenAt.current === last.at) return;
+    seenAt.current = last.at;
+    if (!["click", "double_click", "right_click"].includes(last.type)) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    setClick(last.at);
+    const timer = setTimeout(() => setClick(null), 550);
+    return () => clearTimeout(timer);
+  }, [last]);
+  if (!activity.busy && !spot) return null;
+  return <div className="pointer-events-none absolute inset-0">
+    {activity.busy && <span className="absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-[12px] text-white/90">Using the computer</span>}
+    {spot && <span className="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_0_0_2px_rgba(0,0,0,0.6)]" style={{ left: spot.left, top: spot.top }} />}
+    {spot && click && click === last?.at && <span className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: spot.left, top: spot.top }}><span className="desktop-pointer-click block size-6 rounded-full border-2 border-white/90" /></span>}
+  </div>;
+}
+
+function DesktopScreen({ slug, control, activity, onDisconnect }: { slug: string; control: boolean; activity: DesktopStatus["activity"]; onDisconnect: () => void }) {
   const box = useRef<HTMLDivElement>(null);
   const [connected, setConnected] = useState(false);
   useEffect(() => {
@@ -83,6 +127,7 @@ function DesktopScreen({ slug, control, onDisconnect }: { slug: string; control:
   }, [slug, control]);
   return <div className="relative min-h-0 flex-1">
     <div ref={box} className="absolute inset-0" aria-label={control ? "Desktop, you're in control" : "Desktop, watching"} />
+    {!control && <BotPointer activity={activity} container={box} />}
     {!connected && <div className="pointer-events-none absolute inset-0 grid place-items-center"><Spinner size={20} /></div>}
   </div>;
 }
@@ -126,7 +171,7 @@ export function DesktopView({ bot, onBrowser }: { bot: Bot; onBrowser: () => voi
       <button type="button" onClick={onBrowser} className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 text-[13px] text-white/80"><Globe size={14} />Browser</button>
     </header>
     <main className="relative flex min-h-0 flex-1 flex-col">
-      {live ? <DesktopScreen key={String(control)} slug={bot.slug} control={control} onDisconnect={() => void refresh()} />
+      {live ? <DesktopScreen key={String(control)} slug={bot.slug} control={control} activity={status?.activity ?? { busy: false, last: null }} onDisconnect={() => void refresh()} />
         : <div className="grid flex-1 place-items-center px-6 text-center text-[15px] text-white/60"><div>
           {status?.state === "stopped" ? <Moon size={30} className="mx-auto mb-4 opacity-60" /> : <Monitor size={30} className="mx-auto mb-4 opacity-60" />}
           <p>{error ?? (status ? LABEL[status.state] : "Checking…")}</p>
