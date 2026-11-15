@@ -491,7 +491,7 @@ button {
 .apps-detail-action button { background: var(--pill); color: var(--pill-fg); height: 46px; padding-inline: 24px; font-size: 16px; }
 .apps-account-detail > h3 { align-self: start; margin: 28px 0 8px; color: var(--fg-muted); font-size: 14px; }
 .apps-account-detail fieldset { width: 100%; margin-top: 16px; }
-.connected-count { white-space: nowrap; height: 44px; font-size: 15px; border: 1px solid var(--border-strong); }
+.connected-count { white-space: nowrap; height: 28px; padding-inline: 10px; font-size: 12px; line-height: 16px; border: 1px solid var(--border-strong); }
 .new-bot-preview { padding-top: 36px; }
 .new-bot-name { height: 58px; font-size: 21px; font-weight: 500; background: var(--bg-card); border: 0; margin-top: 24px; }
 .new-bot-sheet .dialog-body { flex: 1; }
@@ -771,7 +771,6 @@ button {
   .connect-apps-sheet { width: min(900px, calc(100vw - 64px)); }
   .connect-apps-sheet > .bot-modal-header { order: 0; }
   .connect-apps-sheet .apps-search { position: static; order: 1; flex-shrink: 0; height: 36px; margin: 16px 24px 12px; box-shadow: none; }
-  /* Fade the end of the category row so a cut-off chip reads as scrollable. */
   .connect-apps-sheet .apps-filters { order: 2; padding: 0 24px 12px; mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent); }
   .connect-apps-sheet .apps-catalog { order: 3; padding: 0 24px 24px; }
   .connect-apps-sheet .apps-section { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 24px; }
