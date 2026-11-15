@@ -42,7 +42,7 @@ function presentation(attachment: ChatAttachment) {
   const Icon = attachment.fileKind === "image" ? FileImage : attachment.fileKind === "video" ? FileVideo
     : /^(CSV|TSV|XLSX?|ODS)$/.test(label) ? FileSpreadsheet
     : attachment.fileKind === "html" || /^(JSON|XML|YAML|YML|JS|TS|PY|SH|CSS)$/.test(label) ? FileCode
-    : attachment.fileKind === "text" || attachment.fileKind === "pdf" ? FileText : File;
+    : attachment.fileKind === "text" || attachment.fileKind === "pdf" || attachment.fileKind === "doc" ? FileText : File;
   return { name: extension?.[1] ?? attachment.name, detail: size ? `${label} · ${size}` : label, Icon };
 }
 
@@ -64,7 +64,7 @@ export function ChatAttachmentList({ attachments, align = "end" }: { attachments
   const selected = items.find((item) => item.id === selectedId);
   useEffect(() => { if (selectedId && !selected) setSelectedId(null); }, [selectedId, selected]);
   const resource: { _tag: "attachment"; attachmentId: string; disposition?: "inline" } | null = selected
-    ? { _tag: "attachment", attachmentId: selected.id, ...(selected.fileKind !== "file" ? { disposition: "inline" } : {}) }
+    ? { _tag: "attachment", attachmentId: selected.id, ...(!["file", "sheet", "doc"].includes(selected.fileKind) ? { disposition: "inline" } : {}) }
     : null;
   return <>
     <div className={clsx("chat-attachments mb-1 flex min-w-0 flex-wrap gap-1.5", align === "start" ? "justify-start" : "justify-end")}>

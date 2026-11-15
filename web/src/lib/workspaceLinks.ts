@@ -48,12 +48,14 @@ export function workspaceLinkPath(href: string, workspaceRoot: string, fromPath?
   return parts?.length ? parts.join("/") : null;
 }
 
-export function workspaceFileKind(path: string): "image" | "video" | "audio" | "html" | "pdf" | "text" | "file" {
+export function workspaceFileKind(path: string): "image" | "video" | "audio" | "html" | "pdf" | "sheet" | "doc" | "text" | "file" {
   if (/\.(png|jpe?g|gif|webp|svg|avif|bmp|ico|heic|tiff?)$/i.test(path)) return "image";
   if (/\.(mp4|webm|mov|m4v|ogv)$/i.test(path)) return "video";
   if (/\.(mp3|wav|ogg|oga|m4a|aac|flac|opus)$/i.test(path)) return "audio";
   if (/\.html?$/i.test(path)) return "html";
   if (/\.pdf$/i.test(path)) return "pdf";
+  if (/\.xlsx$/i.test(path)) return "sheet";
+  if (/\.docx$/i.test(path)) return "doc";
   if (/\.(md|txt|csv|json|ya?ml|xml|log|[cm]?[jt]sx?|css|sh|py|sql)$/i.test(path) || /(^|\/)(README|LICENSE)$/i.test(path)) return "text";
   return "file";
 }

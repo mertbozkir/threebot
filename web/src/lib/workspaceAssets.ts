@@ -13,8 +13,8 @@ export function workspaceAssetUrl(resource: LibraryResource, scopeThreadId: stri
     // T3 workspace-file grants cover browser documents and images, not text or
     // audio/video. media-file resolves relative paths in the owning thread.
     // Download disposition permits arbitrary files; fetch can still read text.
-    if (["text", "file", "audio", "video"].includes(kind)) {
-      return signAsset({ ...resource, _tag: "media-file", ...(["text", "file"].includes(kind) ? { disposition: "attachment" } : {}) }, workspaceEnvironment(owner));
+    if (["text", "file", "sheet", "doc", "audio", "video"].includes(kind)) {
+      return signAsset({ ...resource, _tag: "media-file", ...(["text", "file", "sheet", "doc"].includes(kind) ? { disposition: "attachment" } : {}) }, workspaceEnvironment(owner));
     }
   }
   return signAsset(resource, workspaceEnvironment(owner));
