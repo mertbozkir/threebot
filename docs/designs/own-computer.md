@@ -97,6 +97,20 @@ caller's own Bot token, never by an argument.
   1280x800 and scaled to the screen. Actions become xdotool argument lists, no
   shell.
 
+- `computer_request_help`: the Bot asks the person to take over its screen
+  for a step only they can do (sign-in, 2FA, CAPTCHA). The Desktop view shows
+  a "Waiting for you" card with Take over. When the person hands the screen
+  back, the gateway queues a message in the Bot's main thread.
+
+### While someone watches or controls
+
+- **Live pointer:** the status carries whether a batch is running and the
+  Bot's last pointer position. The watch view polls faster during a batch and
+  draws a dot, a click pulse and a "Using the computer" label over the screen.
+- **Paste:** while in control, the person can send text that the gateway types
+  into the focused window with xdotool (`POST /api/desktop/<bot>/type`, 2000
+  characters, control characters refused). The VNC clipboard stays off.
+
 ### Lifecycle
 
 States: `off | unavailable | building | stopped | starting | healthy |
@@ -124,15 +138,25 @@ timeout, and after a timeout the module re-reads the real state.
    sandbox provider. A small `threebot desktop-host` service next to T3 there
    would expose the same interface over HTTP.
 2. **Linux hosts** with Docker or Podman.
-3. **Ask for a hand:** the Bot asks the person to take over for a sign-in,
-   2FA or CAPTCHA, and is told when the screen is handed back.
-4. **Live pointer** on the watch view while a Bot acts.
-5. **Paste into the screen** while in control, typed by the gateway.
-6. **Faster wake:** suspend the VM instead of stopping it, if the runtime
+3. **Faster wake:** suspend the VM instead of stopping it, if the runtime
    supports it.
-7. **A second view for the model:** an accessibility tree or browser element
+4. **A second view for the model:** an accessibility tree or browser element
    refs next to the screenshot.
 
 ## Measured
 
-Filled in from a live run on an Apple silicon Mac; see the PR description.
+Live run on an Apple silicon Mac with Apple `container`, 4 screens, image
+already built:
+
+| Step | Time |
+|---|---|
+| Cold wake to first screenshot | 9.0 s |
+| Wake again after an idle stop | 7.0 s |
+| Screenshot while awake | 0.11 s |
+| Batch of 4 actions (with 2.5 s of waits) and screenshot | 3.4 s |
+
+Checked in the same run: each Bot got its own screen; the VNC socket answers
+only through the gateway; watch mode drops key events; a Bot call is refused
+while a person controls its screen; paste typed text with a leading `-`
+correctly; the hand-back message arrived in the Bot's thread; the desktop
+stopped after the idle time and woke again.
