@@ -451,7 +451,7 @@ button {
   .composer-content { max-width: 960px; }
   .composer-controls { padding: 5px; }
   .composer-controls textarea { min-height: 32px; padding-block: 5px; }
-  .composer-controls > button, .composer-controls [aria-label="Composer actions"] { width: 32px; height: 32px; }
+  .composer-controls > button, .composer-controls [aria-label="Composer actions"], .composer-controls .composer-stop > button { width: 32px; height: 32px; }
   .bot-details .details-profile { padding-top: 14px; }
   .bot-details .details-profile > button:nth-child(2) { margin-top: 18px; }
   .bot-details .profile-edit { display: none; }
