@@ -157,6 +157,6 @@ already built:
 
 Checked in the same run: each Bot got its own screen; the VNC socket answers
 only through the gateway; watch mode drops key events; a Bot call is refused
-while a person controls its screen; paste typed text with a leading `-`
-correctly; the hand-back message arrived in the Bot's thread; the desktop
+while a person controls its screen; paste typed text ending in `-x`
+literally (a leading `-` is covered by a unit test); the hand-back message arrived in the Bot's thread; the desktop
 stopped after the idle time and woke again.

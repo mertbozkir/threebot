@@ -30,7 +30,7 @@ const READY_TIMEOUT_MS = 45_000;
 const EXEC_TIMEOUT_MS = 60_000;
 
 export const CONTROLLED_MESSAGE = "The person is using your screen. Take a new screenshot after they hand it back.";
-export const HELP_REQUESTED_MESSAGE = "The person has been asked to take over your screen. Stop using the computer until they hand it back; you'll get a message in this thread when they do.";
+export const HELP_REQUESTED_MESSAGE = "The person has been asked to take over your screen. Stop using the computer until they hand it back; you'll get a message in your main thread when they do.";
 const IDLE_ACTIVITY: DesktopActivity = { busy: false, last: null };
 
 /** sha256 of every file under dir (sorted relative paths and contents), so a changed image rebuilds. */
@@ -332,7 +332,7 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
       state = "stopping";
       log(`desktop: stopping (${why})`);
       await remove();
-      leases.clear(); screenBusy.clear();
+      leases.clear(); screenBusy.clear(); activities.clear();
       state = "stopped";
     });
   }
@@ -343,7 +343,7 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
       if (idleTimer) clearTimeout(idleTimer);
       idleTimer = null;
       if (state === "healthy" || state === "starting" || state === "failed" || state === "stopped") await remove();
-      leases.clear(); controlled.clear(); screenBusy.clear();
+      leases.clear(); controlled.clear(); screenBusy.clear(); activities.clear(); helpRequests.clear();
       state = "off"; reason = null;
     });
   }
@@ -453,8 +453,6 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
     screenshot(slug: string) { return withScreen(slug, capture); },
     async actions(slug: string, actions: unknown) {
       const args = xdotoolArgs(actions);
-      // A watcher follows the batch: busy for its whole run, the pointer at each action as it happens.
-      activities.set(slug, { busy: true, last: activities.get(slug)?.last ?? null });
       // The same split into runs as xdotoolArgs makes, so the recorded pointer tracks execution.
       const groups: Record<string, unknown>[][] = [[]];
       for (const action of actions as Record<string, unknown>[]) {
@@ -462,8 +460,12 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
         if (action.type === "type") groups.push([]);
       }
       if (!groups.at(-1)!.length) groups.pop();
+      let started = false;
       try {
         return await withScreen(slug, async (display) => {
+          // Busy only once this batch holds the screen, so a refused second batch can't clear a running one's flag.
+          started = true;
+          activities.set(slug, { busy: true, last: activities.get(slug)?.last ?? null });
           for (let i = 0; i < args.length; i++) {
             for (const action of groups[i]) {
               const spot = pointerSpot(action);
@@ -477,13 +479,16 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
           return capture(display);
         });
       } finally {
-        activities.set(slug, { busy: false, last: activities.get(slug)?.last ?? null });
+        if (started) activities.set(slug, { busy: false, last: activities.get(slug)?.last ?? null });
       }
     },
     /** Typing for a person in control of the screen: deliberately not withScreen (that refuses Bot calls while controlled) and never Bot activity, so no busy mark and no idle reset. */
     async typeText(slug: string, text: string) {
+      if (!controlled.has(slug)) throw Object.assign(new Error("Take control of the screen first."), { status: 409 });
       const display = leases.get(slug);
       if (!display) throw Object.assign(new Error("The Bot has no screen on the computer."), { status: 409 });
+      // Control can be taken mid-batch; typing into the Bot's own keystrokes would garble both.
+      if (screenBusy.has(display)) throw Object.assign(new Error("The Bot is finishing a batch of actions. Try again in a moment."), { status: 409 });
       const result = await exec(["xdotool", "type", "--delay", "12", "--", text], { display });
       if (result.code !== 0) throw new Error(`Typing failed: ${result.stderr.trim().slice(-300)}`);
     },
@@ -514,7 +519,7 @@ export const DESKTOP_TOOLS = [
   {
     name: "computer_request_help",
     title: "Ask for a hand",
-    description: `Ask the person to take over your screen for a step only they can do (signing in, 2FA, a CAPTCHA). Stop using the computer until they hand it back; that arrives as a message in your thread.`,
+    description: `Ask the person to take over your screen for a step only they can do (signing in, 2FA, a CAPTCHA). Stop using the computer until they hand it back; that arrives as a message in your main thread.`,
     inputSchema: { type: "object", required: ["instruction"], properties: { instruction: { type: "string", maxLength: 500 } } },
   },
 ] as const;

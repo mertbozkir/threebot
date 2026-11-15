@@ -444,7 +444,14 @@ const desktop = createDesktop({
   onHelpReturned: (slug, instruction) => {
     void (async () => {
       const bot = (await listBots()).find((candidate) => candidate.slug === slug);
-      if (bot?.mainThreadId) await dispatchThreadMessage(bot.mainThreadId, `From Threebot: the person handed your screen back after: ${instruction}. Take a new screenshot and carry on.`);
+      if (!bot?.mainThreadId) return;
+      // The Bot was told to wait for this message, so a T3 hiccup must not swallow it.
+      for (const delayMs of [0, 5_000, 30_000, 120_000]) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        try { return void (await dispatchThreadMessage(bot.mainThreadId, `From Threebot: the person handed your screen back after: ${instruction}. Take a new screenshot and carry on.`)); }
+        catch (error) { console.warn(`desktop: hand-back message to ${slug} failed: ${(error as Error).message}`); }
+      }
+      throw new Error("gave up after 4 tries");
     })().catch((e) => console.error("desktop help notification failed", (e as Error).message));
   },
 });
@@ -1435,7 +1442,6 @@ const server = http.createServer(async (req, res) => {
       }
       if (desktopRoute[2] === "/wake" && req.method === "POST") { await desktop.wake(); return send(res, 200, desktop.status(slug), { "cache-control": "no-store" }); }
       if (desktopRoute[2] === "/type" && req.method === "POST") {
-        if (!desktop.status(slug).controlled) return send(res, 409, { error: "Take control of the screen first." });
         requireJson(req);
         const text = pasteText((await readBody(req, 16384)).text);
         await desktop.typeText(slug, text);

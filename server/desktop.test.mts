@@ -128,7 +128,10 @@ test("paste text is 1..2000 characters with no control characters beyond newline
 test("typeText types into the Bot's own display while the person controls it, without Bot activity", async (t) => {
   const { desktop, runtime } = await setup(t);
   await desktop.enable();
+  await assert.rejects(desktop.typeText("alpha", "hi"), /Take control/);
+  const early = desktop.takeControl("alpha");
   await assert.rejects(desktop.typeText("alpha", "hi"), /no screen/);
+  early();
   await desktop.wake();
   // The viewer connects before taking control, which is what leases the screen.
   assert.match(desktop.vncSocket("alpha")!, /1\.sock$/);
@@ -136,7 +139,10 @@ test("typeText types into the Bot's own display while the person controls it, wi
   await assert.rejects(desktop.actions("alpha", [{ type: "type", text: "x" }]), new RegExp(CONTROLLED_MESSAGE.slice(0, 20)));
   await desktop.typeText("alpha", "hi there");
   assert.match(desktop.vncSocket("beta")!, /2\.sock$/);
+  await assert.rejects(desktop.typeText("beta", "x"), /Take control/);
+  const releaseBeta = desktop.takeControl("beta");
   await desktop.typeText("beta", "-- --delay=1");
+  releaseBeta();
   assert.deepEqual(runtime.calls.filter((c) => c.includes("xdotool")), [
     ["exec", "-u", "bot", "-e", "DISPLAY=:1", "-e", "HOME=/home/bot", "threebot-desktop", "xdotool", "type", "--delay", "12", "--", "hi there"],
     ["exec", "-u", "bot", "-e", "DISPLAY=:2", "-e", "HOME=/home/bot", "threebot-desktop", "xdotool", "type", "--delay", "12", "--", "-- --delay=1"],
@@ -272,4 +278,48 @@ test("the image hash changes with any file in the image folder", async (t) => {
   const before = await imageHash(root);
   await writeFile(path.join(root, "a"), "2");
   assert.notEqual(await imageHash(root), before);
+});
+
+/** A fake runtime whose xdotool calls take `ms`, so a test can act while a batch is running. */
+async function slowSetup(t: { after: (fn: () => Promise<void>) => void }, ms: number) {
+  const { runtime } = await setup(t);
+  const slow: Run = async (args, options) => { if (args.includes("xdotool") && !args.includes("type")) await new Promise((r) => setTimeout(r, ms)); return runtime.run(args, options); };
+  return setup(t, 60_000, { run: slow });
+}
+
+test("a person can't type into a screen while the Bot's batch is still running", async (t) => {
+  const { desktop } = await slowSetup(t, 150);
+  await desktop.enable();
+  const batch = desktop.actions("alpha", [{ type: "click", x: 10, y: 10 }]);
+  await new Promise((r) => setTimeout(r, 60));
+  const release = desktop.takeControl("alpha");
+  await assert.rejects(desktop.typeText("alpha", "hi"), /finishing a batch/);
+  await batch;
+  await desktop.typeText("alpha", "hi");
+  release();
+  await desktop.disable();
+});
+
+test("a refused second batch leaves the running batch's busy flag alone", async (t) => {
+  const { desktop } = await slowSetup(t, 150);
+  await desktop.enable();
+  const first = desktop.actions("alpha", [{ type: "click", x: 10, y: 10 }]);
+  await new Promise((r) => setTimeout(r, 60));
+  await assert.rejects(desktop.actions("alpha", [{ type: "move", x: 5, y: 5 }]), /busy with another batch/);
+  assert.equal(desktop.status("alpha").activity.busy, true);
+  await first;
+  assert.equal(desktop.status("alpha").activity.busy, false);
+  await desktop.disable();
+});
+
+test("stopping forgets the pointer; switching off also forgets help requests", async (t) => {
+  const { desktop } = await setup(t);
+  await desktop.enable();
+  await desktop.actions("alpha", [{ type: "click", x: 10, y: 10 }]);
+  desktop.requestHelp("alpha", "Sign in");
+  await desktop.stop("test");
+  assert.deepEqual(desktop.status("alpha").activity, { busy: false, last: null });
+  assert.equal(desktop.status("alpha").helpRequest?.instruction, "Sign in");
+  await desktop.disable();
+  assert.equal(desktop.status("alpha").helpRequest, null);
 });
