@@ -1,0 +1,37 @@
+name: Mirror upstream releases
+# This fork's release list is what Mert's Threebot checks for updates (THREEBOT_RELEASES_URL).
+# Fork builds (vX.Y.Z-fork.N) are published here by hand; this copies every official release
+# from RokaSwK/threebot too, so official updates still show up. Also fast-forwards main.
+on:
+  schedule: [{ cron: "17 * * * *" }]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      UPSTREAM: RokaSwK/threebot
+    steps:
+      - uses: actions/checkout@v5
+        with: { ref: main, fetch-depth: 0 }
+      - name: Fast-forward main to upstream
+        run: |
+          git fetch "https://github.com/$UPSTREAM.git" main
+          git merge --ff-only FETCH_HEAD && git push origin HEAD:main
+      - name: Copy missing releases
+        run: |
+          git fetch --tags "https://github.com/$UPSTREAM.git"
+          have="$(gh release list -R "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName')"
+          gh api "repos/$UPSTREAM/releases?per_page=30" --jq '.[] | select(.draft|not) | [.tag_name, (.prerelease|tostring)] | @tsv' |
+          while IFS=$'\t' read -r tag pre; do
+            grep -qx "$tag" <<<"$have" && continue
+            dir="$(mktemp -d)"
+            gh release download "$tag" -R "$UPSTREAM" -D "$dir" -p 'threebot-*.tar.gz' -p SHA256SUMS
+            gh api "repos/$UPSTREAM/releases/tags/$tag" --jq .body > "$dir/notes.md"
+            git push origin "refs/tags/$tag" || true
+            flags=(); [ "$pre" = "true" ] && flags+=(--prerelease)
+            gh release create "$tag" -R "$GITHUB_REPOSITORY" --verify-tag --title "$(gh api "repos/$UPSTREAM/releases/tags/$tag" --jq .name)" --notes-file "$dir/notes.md" "${flags[@]}" "$dir"/threebot-*.tar.gz "$dir/SHA256SUMS"
+            echo "mirrored $tag"
+          done
