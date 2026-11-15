@@ -633,7 +633,7 @@ test('Library fixture supplies real signed resources and rejects missing files a
     const bots = (await fixture.request('/api/bots')).body.bots;
     const bot = bots.find((bot: Json) => bot.slug === 'beta');
     const listing = await bounded(rpc.call('projects.listEntries', { cwd: bot.workspaceRoot, directoryPath: 'library' }));
-    assert.deepEqual(listing.entries.map((entry: Json) => entry.path), ['library/counter.html', 'library/sample.csv', 'library/photo.svg', 'library/bars.svg', 'library/notes.txt', 'library/report.pdf', 'library/audio.wav']);
+    assert.deepEqual(listing.entries.map((entry: Json) => entry.path), ['library/counter.html', 'library/sample.csv', 'library/photo.svg', 'library/bars.svg', 'library/notes.txt', 'library/report.pdf', 'library/budget.xlsx', 'library/memo.docx', 'library/audio.wav']);
     const signed = await bounded(rpc.call('assets.createUrl', { resource: { _tag: 'workspace-file', threadId: bot.mainThreadId, path: 'library/counter.html' } }));
     const response = await fetch(fixture.url + '/t3' + signed.relativeUrl);
     assert.equal(response.status, 200);
@@ -659,6 +659,17 @@ test('Library fixture supplies real signed resources and rejects missing files a
     const pdfResponse = await fetch(fixture.url + '/t3' + pdf.relativeUrl);
     assert.equal(pdfResponse.headers.get('content-type'), 'application/pdf');
     assert.match(Buffer.from(await pdfResponse.arrayBuffer()).toString('latin1'), /^%PDF-1\.4[\s\S]*\/Count 2[\s\S]*%%EOF\n$/);
+    // The Office samples: T3 only signs them for download, which is the route the viewer reads them through.
+    for (const [name, mime, part] of [['budget.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xl/workbook.xml'], ['memo.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'word/document.xml']]) {
+      const resource = { threadId: bot.mainThreadId, path: 'library/' + name };
+      await assert.rejects(bounded(rpc.call('assets.createUrl', { resource: { ...resource, _tag: 'workspace-file' } })), /Only browser documents and images/);
+      const office = await bounded(rpc.call('assets.createUrl', { resource: { ...resource, _tag: 'media-file', disposition: 'attachment' } }));
+      const opened = await fetch(fixture.url + '/t3' + office.relativeUrl);
+      assert.equal(opened.headers.get('content-type'), mime);
+      const bytes = Buffer.from(await opened.arrayBuffer());
+      assert.equal(bytes.toString('latin1', 0, 4), 'PK\x03\x04');
+      for (const entry of ['[Content_Types].xml', '_rels/.rels', part]) assert.ok(bytes.includes(entry), entry);
+    }
     // The chat image sample: a Bot-posted workspace image the image viewer opens.
     const bars = await bounded(rpc.call('assets.createUrl', { resource: { _tag: 'workspace-file', threadId: bot.mainThreadId, path: 'library/bars.svg' } }));
     assert.equal((await fetch(fixture.url + '/t3' + bars.relativeUrl)).headers.get('content-type'), 'image/svg+xml');
