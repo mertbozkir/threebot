@@ -2,7 +2,7 @@ import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import { Avatar } from "./components/Avatar";
 import { Chat } from "./components/Chat";
 import { RemoteThread } from "./components/RemoteThread";
-import { ComputerOverlay } from "./components/Computer";
+import { ComputerDialog } from "./components/Desktop";
 import { ConnectApps } from "./components/ConnectApps";
 import { Details } from "./components/Details";
 import { DeleteBotDialog, NewBotDialog, RenameBotDialog } from "./components/NewBotDialog";
@@ -258,7 +258,7 @@ function Dialogs() {
   const bots = useApp((s) => s.bots);
   return (
     <>
-      {typeof dialog === "object" && dialog?.kind === "computer" && <ComputerOverlay slug={dialog.slug} />}
+      {typeof dialog === "object" && dialog?.kind === "computer" && <ComputerDialog slug={dialog.slug} />}
       {dialog === "new-bot" && <NewBotDialog />}
       {dialog === "adopt-project" && <AdoptProjectDialog />}
       {dialog === "settings" && <SettingsDialog />}

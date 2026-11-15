@@ -364,11 +364,12 @@ function Permissions({ s }: { s: Settings }) {
 /** Experimental features, each with its own switch. Saved on the server: they change what Bots get. */
 const BETA_FEATURES = [
   { key: "projects", title: "Projects board", desc: "A live board of your projects, to-dos, machines and what runs where, kept up to date by you and your Bots." },
+  { key: "desktop", title: "Computer", desc: "A Linux desktop on this machine with a screen for each Bot. Watch them work or take control. It sleeps after 2 idle minutes; files and sign-ins stay." },
 ] as const;
 
 function Beta({ s }: { s: Settings }) {
   const save = useContext(SettingsSave);
-  const beta = s.beta ?? { projects: false };
+  const beta = s.beta ?? { projects: false, desktop: false };
   return (
     <>
       <p className="mb-4 text-[13px] text-muted">Features that are still taking shape. Switching one off hides it from you and your Bots; nothing is deleted.</p>

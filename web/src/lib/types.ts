@@ -60,7 +60,7 @@ export type Settings = {
   /** Settings → Avatar drawing model. Null picks a fast model automatically (see lib/avatarDrawing). */
   avatarDrawingModel?: ModelSelection | null;
   /** Settings → Beta: experimental features, saved on the server because they change what Bots get. */
-  beta: { projects: boolean };
+  beta: { projects: boolean; desktop?: boolean };
   codingWork?: CodingWork | null;
 };
 

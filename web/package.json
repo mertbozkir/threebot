@@ -12,6 +12,7 @@
     "typecheck:tests": "tsrs -p tests/tsconfig.json"
   },
   "dependencies": {
+    "@novnc/novnc": "1.7.0",
     "clsx": "^2.1.1",
     "dompurify": "^3.4.17",
     "katex": "^0.19.1",

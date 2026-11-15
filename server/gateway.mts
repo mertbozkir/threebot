@@ -56,6 +56,8 @@ import { createRoomRoutes } from "./rooms-routes.mts";
 import { PROJECT_TOOLS, createProjectTools } from "./projects-mcp.mts";
 import { createProjectRoutes } from "./projects-routes.mts";
 import { BETA_DEFAULTS, betaSettings, patchBeta, settleBetaDefaults } from "./beta.mts";
+import { createDesktop, createDesktopTools, createRfbClientFilter, DESKTOP_TOOLS } from "./desktop.mts";
+import net from "node:net";
 import { aggregateTurnUsage, createTelemetry, MIN_T3_FOR_TOKENS, versionAtLeast, type PayloadInput } from "./telemetry.mts";
 import { AVATAR_BODY_LIMIT, avatarImagePatch, decodeAvatarImage, storeAvatarImage, readAvatarImage } from "./avatar-images.mts";
 
@@ -434,6 +436,10 @@ async function getSettings() {
 }
 /** The Projects board is a beta feature; off hides its routes, its Bot tools and its AGENTS.md section. */
 const projectsOn = async () => (await getSettings()).beta.projects;
+/** The Bots' computer is a beta feature too; off means no container, no tools, no routes. */
+const desktopOn = async () => (await getSettings()).beta.desktop;
+// Apple's `container` runs only on macOS; elsewhere the switch shows the computer as unavailable.
+const desktop = createDesktop({ imageDir: path.join(here, "desktop"), socketDir: path.join(appDir, "vnc"), supported: process.platform === "darwin", log: (line) => console.log(line) });
 function botDir(slug: string) {
   if (!SLUG_RE.test(slug)) throw Object.assign(new Error("bad slug"), { status: 400 });
   return path.join(cfg.botsRoot, slug);
@@ -934,6 +940,12 @@ const projectTools = {
   instructions: "Also the user's Projects board (projects_* tools): their projects, to-dos, machines, what runs where, repos and links, shown live on their Projects page.",
 };
 
+const desktopTools = {
+  tools: DESKTOP_TOOLS,
+  call: createDesktopTools(desktop),
+  instructions: "Also your own screen on a shared Linux desktop (computer_screenshot, computer_actions).",
+};
+
 function combineExtras(...sources: (ExtraTools | null)[]): ExtraTools | null {
   const list = sources.filter((source): source is ExtraTools => Boolean(source));
   if (list.length === 0) return null;
@@ -967,7 +979,7 @@ const botTools = createBotTools({
   secretsDir: cfg.t3SecretsDir,
   tokenDir: path.join(path.dirname(cfg.vaultKeyFile), "bot-secrets"),
   log: (line) => console.log(line),
-  extra: async () => combineExtras((await projectsOn()) ? projectTools : null),
+  extra: async () => combineExtras((await projectsOn()) ? projectTools : null, (await desktopOn()) ? desktopTools : null),
 });
 const projectRoutes = createProjectRoutes({ projects, send, readBody, requireJson, enabled: projectsOn, log: (line) => console.log(line), checkOrigin: (req) => sameOriginRequest(req, originPolicy) });
 const roomRoutes = createRoomRoutes({
@@ -1065,6 +1077,8 @@ async function serveStatic(req: IncomingMessage, res: ServerResponse, urlPath: s
   let file = path.join(cfg.staticDir, /^\/welcome\/?$/.test(safe) ? "welcome/index.html" : safe);
   if (!file.startsWith(cfg.staticDir)) return send(res, 403, "forbidden");
   let stat = await fs.stat(file).catch(() => null);
+  // A missing build file is a 404: answering with index.html would hand a page from an earlier build HTML in place of its script.
+  if (!stat && /^[/\\]assets[/\\]/.test(safe)) return send(res, 404, "not found");
   if (!stat || stat.isDirectory()) { file = path.join(cfg.staticDir, "index.html"); stat = await fs.stat(file).catch(() => null); }
   if (!stat) return send(res, 404, "web app not built");
   const ext = path.extname(file);
@@ -1270,7 +1284,8 @@ const server = http.createServer(async (req, res) => {
       if ("codingWork" in patch) next.codingWork = codingWorkPatch(patch.codingWork);
       await writeJson(settingsPath, next);
       if (!next.beta.projects) projectRoutes.closeStreams();
-      if ("rules" in patch || "userName" in patch || "timezone" in patch || "codingWork" in patch || next.beta.projects !== current.beta.projects) await refreshAllAgentsMd();
+      if (next.beta.desktop !== current.beta.desktop) void (next.beta.desktop ? desktop.enable() : desktop.disable()).catch((e) => console.error("desktop switch failed", e));
+      if ("rules" in patch || "userName" in patch || "timezone" in patch || "codingWork" in patch || next.beta.projects !== current.beta.projects || next.beta.desktop !== current.beta.desktop) await refreshAllAgentsMd();
       return send(res, 200, next);
     }
     if (p === "/api/vault" || p.startsWith("/api/vault/")) return await vaultRoutes(req, res, p, url);
@@ -1395,6 +1410,16 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, await saveBot(m[1], patch));
     }
     if (m && req.method === "DELETE") { const bots = await mainBots.remove(m[1]); return send(res, 200, { ok: true, bots }); }
+    const desktopRoute = p.match(/^\/api\/desktop\/([a-z0-9][a-z0-9-]*)(\/wake)?$/);
+    if (desktopRoute && (await desktopOn())) {
+      const slug = desktopRoute[1];
+      if (!(await listBots()).some((bot) => bot.slug === slug)) return send(res, 404, { error: "no such Bot" });
+      if (!desktopRoute[2] && req.method === "GET") {
+        if (desktop.status(slug).state === "healthy") desktop.vncSocket(slug);
+        return send(res, 200, desktop.status(slug), { "cache-control": "no-store" });
+      }
+      if (desktopRoute[2] && req.method === "POST") { await desktop.wake(); return send(res, 200, desktop.status(slug), { "cache-control": "no-store" }); }
+    }
     if (p.startsWith("/api/")) return send(res, 404, { error: "not found" });
 
     return await serveStatic(req, res, p);
@@ -1427,6 +1452,50 @@ function proxyPreviewStream(req: IncomingMessage, socket: Duplex, head: Buffer, 
     upstream.on("error", () => close(1011, "upstream error"));
     client.on("close", () => { try { upstream.close(); } catch {} });
     client.on("error", () => { try { upstream.close(); } catch {} });
+  });
+}
+
+// ---------- the Bots' computer screens (VNC over WebSocket) ----------
+const desktopWss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 1 << 20 });
+async function desktopUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, url: URL) {
+  const refuse = (status: string) => { socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`); };
+  if (!(await authed(req).catch(() => false))) return refuse("401 Unauthorized");
+  const match = url.pathname.match(/^\/api\/desktop\/([a-z0-9][a-z0-9-]*)\/vnc$/);
+  const mode = url.searchParams.get("mode") === "control" ? "control" : "watch";
+  if (!match || !(await desktopOn())) return refuse("404 Not Found");
+  const slug = match[1];
+  if (!(await listBots()).some((bot) => bot.slug === slug)) return refuse("404 Not Found");
+  let socketPath: string | null;
+  try { socketPath = desktop.vncSocket(slug); } catch { return refuse("409 Conflict"); }
+  if (!socketPath) return refuse("409 Conflict");
+  desktopWss.handleUpgrade(req, socket, head, (client) => {
+    // Watching never counts as activity; control holds the desktop awake and pauses the Bot's own calls.
+    const release = mode === "control" ? desktop.takeControl(slug) : null;
+    const filter = createRfbClientFilter(mode);
+    const upstream = net.connect({ path: socketPath });
+    const pending: Buffer[] = [];
+    let open = false;
+    let closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      release?.();
+      try { client.close(); } catch {}
+      upstream.destroy();
+    };
+    const forward = (chunk: Buffer) => {
+      let allowed: Buffer;
+      try { allowed = filter(chunk); } catch (error) { console.warn(`desktop: closed a ${mode} viewer of ${slug}: ${(error as Error).message}`); return close(); }
+      if (!allowed.length) return;
+      if (open) upstream.write(allowed); else pending.push(allowed);
+    };
+    upstream.on("connect", () => { open = true; for (const chunk of pending.splice(0)) upstream.write(chunk); });
+    client.on("message", (data) => forward(Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)));
+    upstream.on("data", (chunk) => { if (client.readyState === WebSocket.OPEN) client.send(chunk, { binary: true }); });
+    upstream.on("close", close);
+    upstream.on("error", close);
+    client.on("close", close);
+    client.on("error", close);
   });
 }
 
@@ -1464,6 +1533,7 @@ server.on("upgrade", async (req, socket, head) => {
   }
   const url = new URL(req.url!, "http://x");
   if (url.pathname === "/api/voice/cloud/live") return liveDictationUpgrade(req, socket, head, url);
+  if (url.pathname.startsWith("/api/desktop/")) return desktopUpgrade(req, socket, head, url);
   let route;
   try { route = environmentPath(url.pathname); } catch { socket.end("HTTP/1.1 400 Bad Request\r\n\r\n"); return; }
   const isPreview = route.path === "/api/preview-stream/ws";
@@ -1608,6 +1678,7 @@ setInterval(keepActive, 3_600_000).unref();
 
 // Bot instructions may have changed with this version of the gateway.
 refreshAllAgentsMd().catch((e) => console.error("refreshing AGENTS.md failed", e));
+if (await desktopOn()) desktop.enable().catch((e) => console.error("desktop start failed", e));
 startMemoryWatcher();
 startMachineMonitor();
 
@@ -1629,7 +1700,13 @@ if (envTailnet) {
 }
 // Tailscale and Cloudflare links switched on in Settings come back with the gateway.
 remoteAccess.boot().catch((e) => console.error("remote access", e));
-for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => { remoteAccess.stop(); process.exit(0); });
+for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => {
+  remoteAccess.stop();
+  // The desktop holds RAM; don't leave it running without the gateway that would stop it.
+  const exit = () => process.exit(0);
+  setTimeout(exit, 10_000).unref();
+  desktop.disable().finally(exit);
+});
 // An update this gateway's predecessor started either worked or rolled back; record which for the app.
 await autoUpdate.settle().catch((error) => console.error("auto-update: couldn't read its state", error));
 // Copies that can update themselves check on their own, so the sidebar's update button shows without
