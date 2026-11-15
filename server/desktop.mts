@@ -131,6 +131,12 @@ export function xdotoolArgs(actions: unknown): string[][] {
   return runs;
 }
 
+/** The text a person pastes into a screen they control: 1..2000 characters, no control characters except \n and \t. */
+export function pasteText(text: unknown): string {
+  if (typeof text !== "string" || !text || text.length > 2000 || /[\u0000-\u0008\u000b-\u001f\u007f]/.test(text)) throw Object.assign(new Error("text must be 1..2000 characters without control characters"), { status: 400 });
+  return text;
+}
+
 /** The pointer position a watcher sees for an action, in model coordinates; a drag points where it ends. */
 function pointerSpot(action: Record<string, unknown>): { type: string; x: number; y: number } | null {
   switch (action.type) {
@@ -473,6 +479,13 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
       } finally {
         activities.set(slug, { busy: false, last: activities.get(slug)?.last ?? null });
       }
+    },
+    /** Typing for a person in control of the screen: deliberately not withScreen (that refuses Bot calls while controlled) and never Bot activity, so no busy mark and no idle reset. */
+    async typeText(slug: string, text: string) {
+      const display = leases.get(slug);
+      if (!display) throw Object.assign(new Error("The Bot has no screen on the computer."), { status: 409 });
+      const result = await exec(["xdotool", "type", "--delay", "12", "--", text], { display });
+      if (result.code !== 0) throw new Error(`Typing failed: ${result.stderr.trim().slice(-300)}`);
     },
   };
 }

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import sharp from "sharp";
-import { CONTROLLED_MESSAGE, createDesktop, createDesktopTools, createRfbClientFilter, HELP_REQUESTED_MESSAGE, imageHash, runArgs, xdotoolArgs, type Desktop, type DesktopOptions, type DesktopStatus, type Run } from "./desktop.mts";
+import { CONTROLLED_MESSAGE, createDesktop, createDesktopTools, createRfbClientFilter, HELP_REQUESTED_MESSAGE, imageHash, pasteText, runArgs, xdotoolArgs, type Desktop, type DesktopOptions, type DesktopStatus, type Run } from "./desktop.mts";
 
 const handshake = () => Buffer.concat([Buffer.from("RFB 003.008\n", "latin1"), Buffer.from([1]), Buffer.from([0])]);
 const key = Buffer.from([4, 1, 0, 0, 0, 0, 0, 0x61]);
@@ -116,6 +116,33 @@ test("while a person controls the screen, the Bot's calls return at once", async
   await assert.rejects(desktop.screenshot("alpha"), new RegExp(CONTROLLED_MESSAGE.slice(0, 20)));
   release();
   await desktop.screenshot("alpha");
+  await desktop.disable();
+});
+
+test("paste text is 1..2000 characters with no control characters beyond newline and tab", () => {
+  const bad = (text: unknown) => assert.throws(() => pasteText(text), (error: unknown) => (error as { status?: number }).status === 400);
+  bad(""); bad("a".repeat(2001)); bad(null); bad(5); bad("a\0b"); bad("a\rb"); bad("a\x1bb"); bad("a\x7fb");
+  for (const good of ["a", "a".repeat(2000), "line\nbreak\ttab", "héllo → 🚀", "- --looks like a flag"]) assert.equal(pasteText(good), good);
+});
+
+test("typeText types into the Bot's own display while the person controls it, without Bot activity", async (t) => {
+  const { desktop, runtime } = await setup(t);
+  await desktop.enable();
+  await assert.rejects(desktop.typeText("alpha", "hi"), /no screen/);
+  await desktop.wake();
+  // The viewer connects before taking control, which is what leases the screen.
+  assert.match(desktop.vncSocket("alpha")!, /1\.sock$/);
+  const release = desktop.takeControl("alpha");
+  await assert.rejects(desktop.actions("alpha", [{ type: "type", text: "x" }]), new RegExp(CONTROLLED_MESSAGE.slice(0, 20)));
+  await desktop.typeText("alpha", "hi there");
+  assert.match(desktop.vncSocket("beta")!, /2\.sock$/);
+  await desktop.typeText("beta", "-- --delay=1");
+  assert.deepEqual(runtime.calls.filter((c) => c.includes("xdotool")), [
+    ["exec", "-u", "bot", "-e", "DISPLAY=:1", "-e", "HOME=/home/bot", "threebot-desktop", "xdotool", "type", "--delay", "12", "--", "hi there"],
+    ["exec", "-u", "bot", "-e", "DISPLAY=:2", "-e", "HOME=/home/bot", "threebot-desktop", "xdotool", "type", "--delay", "12", "--", "-- --delay=1"],
+  ]);
+  assert.deepEqual(desktop.status("alpha").activity, { busy: false, last: null });
+  release();
   await desktop.disable();
 });
 

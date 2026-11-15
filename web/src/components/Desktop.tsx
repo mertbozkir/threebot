@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ComputerOverlay } from "./Computer";
-import { ArrowLeft, Check, Globe, Hand, Moon, Monitor } from "lucide-react";
+import { ArrowLeft, Check, ClipboardPaste, Globe, Hand, Moon, Monitor } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { ActivityAvatar } from "./ActivityAvatar";
 import { Spinner } from "./ui";
@@ -101,7 +101,7 @@ function BotPointer({ activity, container }: { activity: DesktopStatus["activity
   </div>;
 }
 
-function DesktopScreen({ slug, control, activity, onDisconnect }: { slug: string; control: boolean; activity: DesktopStatus["activity"]; onDisconnect: () => void }) {
+function DesktopScreen({ slug, control, activity, onDisconnect, rfbRef }: { slug: string; control: boolean; activity: DesktopStatus["activity"]; onDisconnect: () => void; rfbRef: { current: Rfb | null } }) {
   const box = useRef<HTMLDivElement>(null);
   const [connected, setConnected] = useState(false);
   useEffect(() => {
@@ -111,6 +111,7 @@ function DesktopScreen({ slug, control, activity, onDisconnect }: { slug: string
     void import("@novnc/novnc").then(({ default: RFB }) => {
       if (cancelled || !box.current) return;
       rfb = new RFB(box.current, vncUrl(slug, control ? "control" : "watch")) as Rfb;
+      rfbRef.current = rfb;
       rfb.scaleViewport = true;
       rfb.viewOnly = !control;
       rfb.focusOnClick = control;
@@ -123,7 +124,7 @@ function DesktopScreen({ slug, control, activity, onDisconnect }: { slug: string
     });
     // A hidden page closes the socket; reopening the view reconnects.
     document.addEventListener("visibilitychange", hide);
-    return () => { cancelled = true; document.removeEventListener("visibilitychange", hide); rfb?.disconnect(); };
+    return () => { cancelled = true; document.removeEventListener("visibilitychange", hide); rfb?.disconnect(); rfbRef.current = null; };
   }, [slug, control]);
   return <div className="relative min-h-0 flex-1">
     <div ref={box} className="absolute inset-0" aria-label={control ? "Desktop, you're in control" : "Desktop, watching"} />
@@ -145,6 +146,11 @@ export function DesktopView({ bot, onBrowser }: { bot: Bot; onBrowser: () => voi
   const [control, setControl] = useState(false);
   const [waking, setWaking] = useState(false);
   const [wakeError, setWakeError] = useState<string | null>(null);
+  const rfbRef = useRef<Rfb | null>(null);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [paste, setPaste] = useState("");
+  const [pasteError, setPasteError] = useState<string | null>(null);
+  const [typing, setTyping] = useState(false);
   const activity = useApp(s => botStatus(bot, s));
   const close = () => openDialog(null);
   useEffect(() => {
@@ -152,6 +158,7 @@ export function DesktopView({ bot, onBrowser }: { bot: Bot; onBrowser: () => voi
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [control]);
+  useEffect(() => { if (!control) { setPasteOpen(false); setPasteError(null); } }, [control]);
   const live = status?.state === "healthy";
   if (!live && control) setControl(false);
   const wake = async () => {
@@ -161,6 +168,12 @@ export function DesktopView({ bot, onBrowser }: { bot: Bot; onBrowser: () => voi
   };
   const help = status?.helpRequest ?? null;
   const takeOver = async () => { if (!live) await wake(); setControl(true); };
+  const typeText = async () => {
+    setTyping(true); setPasteError(null);
+    try { await api.typeDesktop(bot.slug, paste); setPasteOpen(false); setPaste(""); rfbRef.current?.focus(); }
+    catch (e) { setPasteError(e instanceof Error ? e.message : "Couldn’t type the text"); }
+    finally { setTyping(false); }
+  };
   const statusText = !status ? "Checking…" : live ? control ? "You're in control" : "Watching" : LABEL[status.state];
   return <div role="dialog" aria-modal="true" aria-label={`${bot.name}’s computer`} className="fixed inset-0 z-50 flex flex-col bg-black text-white" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
     <header className="flex min-h-16 shrink-0 items-center gap-3 px-4 py-3">
@@ -171,7 +184,7 @@ export function DesktopView({ bot, onBrowser }: { bot: Bot; onBrowser: () => voi
       <button type="button" onClick={onBrowser} className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 text-[13px] text-white/80"><Globe size={14} />Browser</button>
     </header>
     <main className="relative flex min-h-0 flex-1 flex-col">
-      {live ? <DesktopScreen key={String(control)} slug={bot.slug} control={control} activity={status?.activity ?? { busy: false, last: null }} onDisconnect={() => void refresh()} />
+      {live ? <DesktopScreen key={String(control)} slug={bot.slug} control={control} activity={status?.activity ?? { busy: false, last: null }} onDisconnect={() => void refresh()} rfbRef={rfbRef} />
         : <div className="grid flex-1 place-items-center px-6 text-center text-[15px] text-white/60"><div>
           {status?.state === "stopped" ? <Moon size={30} className="mx-auto mb-4 opacity-60" /> : <Monitor size={30} className="mx-auto mb-4 opacity-60" />}
           <p>{error ?? (status ? LABEL[status.state] : "Checking…")}</p>
@@ -183,10 +196,21 @@ export function DesktopView({ bot, onBrowser }: { bot: Bot; onBrowser: () => voi
         </div></div>}
     </main>
     {help && !control ? <HelpCard instruction={help.instruction} onTakeOver={() => void takeOver()} busy={waking} /> : null}
+    {control && pasteOpen ? <div className="shrink-0 border-t border-white/10 px-4 py-3">
+      <textarea autoFocus rows={3} maxLength={2000} value={paste} placeholder={`Text to type into ${bot.name}’s screen`} onChange={(event) => setPaste(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setPasteOpen(false); } }} className="w-full resize-none rounded-lg bg-white/10 px-3 py-2 text-[15px] leading-5 text-white outline-none placeholder:text-white/40 focus:ring-1 focus:ring-white/50" />
+      {pasteError ? <p role="alert" className="mt-2 break-words text-[13px] leading-5 text-danger">{pasteError}</p> : null}
+      <div className="mt-3 flex items-center gap-2">
+        <button type="button" onClick={() => void typeText()} disabled={typing || !paste} className="inline-flex min-h-9 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 text-[14px] text-white disabled:opacity-40">{typing ? <Spinner size={14} /> : null}Send</button>
+        <button type="button" onClick={() => setPasteOpen(false)} className="inline-flex min-h-9 items-center rounded-full border border-white/15 bg-white/10 px-4 text-[14px] text-white/80">Cancel</button>
+      </div>
+    </div> : null}
     <footer className="flex min-h-16 shrink-0 items-center justify-between gap-3 px-4 py-3">
       <div className="min-w-0 text-[12px] text-white/50"><span role="status">{statusText}</span><span className="block">Shared desktop · files and sign-ins are shared by all Bots</span></div>
       {live ? control
-        ? <button type="button" onClick={() => setControl(false)} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 text-[15px] text-white"><Check size={16} />I'm done</button>
+        ? <div className="flex shrink-0 items-center gap-2">
+          <button type="button" onClick={() => { setPasteOpen((open) => !open); setPasteError(null); }} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 text-[15px] text-white"><ClipboardPaste size={16} />Paste text</button>
+          <button type="button" onClick={() => setControl(false)} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 text-[15px] text-white"><Check size={16} />I'm done</button>
+        </div>
         : <button type="button" onClick={() => setControl(true)} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 text-[15px] text-white"><Hand size={16} />Take control</button>
         : null}
     </footer>

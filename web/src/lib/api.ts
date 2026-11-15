@@ -62,6 +62,7 @@ export type DesktopStatus = { state: "off" | "unavailable" | "building" | "stopp
 export const api = {
   desktop: (slug: string) => req<DesktopStatus>(`/api/desktop/${encodeURIComponent(slug)}`),
   wakeDesktop: (slug: string) => req<DesktopStatus>(`/api/desktop/${encodeURIComponent(slug)}/wake`, { method: "POST", body: "{}" }),
+  typeDesktop: (slug: string, text: string) => req<{ ok: true }>(`/api/desktop/${encodeURIComponent(slug)}/type`, { method: "POST", body: JSON.stringify({ text }) }),
   machines: (fresh = false) => req<{ machines: Machine[]; linksSupported: boolean }>(`/api/machines${fresh ? "?fresh=1" : ""}`),
   pairMachine: (environmentId: string, code: string, url?: string) => req<{ environmentId: string; baseUrl: string }>(`/api/machines/${encodeURIComponent(environmentId)}/pair`, { method: "POST", body: JSON.stringify({ code, ...(url ? { url } : {}) }) }),
   unpairMachine: (environmentId: string) => req<unknown>(`/api/machines/${encodeURIComponent(environmentId)}/pair`, { method: "DELETE" }),

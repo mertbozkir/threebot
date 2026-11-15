@@ -56,7 +56,7 @@ import { createRoomRoutes } from "./rooms-routes.mts";
 import { PROJECT_TOOLS, createProjectTools } from "./projects-mcp.mts";
 import { createProjectRoutes } from "./projects-routes.mts";
 import { BETA_DEFAULTS, betaSettings, patchBeta, settleBetaDefaults } from "./beta.mts";
-import { createDesktop, createDesktopTools, createRfbClientFilter, DESKTOP_TOOLS } from "./desktop.mts";
+import { createDesktop, createDesktopTools, createRfbClientFilter, DESKTOP_TOOLS, pasteText } from "./desktop.mts";
 import net from "node:net";
 import { aggregateTurnUsage, createTelemetry, MIN_T3_FOR_TOKENS, versionAtLeast, type PayloadInput } from "./telemetry.mts";
 import { AVATAR_BODY_LIMIT, avatarImagePatch, decodeAvatarImage, storeAvatarImage, readAvatarImage } from "./avatar-images.mts";
@@ -1425,7 +1425,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, await saveBot(m[1], patch));
     }
     if (m && req.method === "DELETE") { const bots = await mainBots.remove(m[1]); return send(res, 200, { ok: true, bots }); }
-    const desktopRoute = p.match(/^\/api\/desktop\/([a-z0-9][a-z0-9-]*)(\/wake)?$/);
+    const desktopRoute = p.match(/^\/api\/desktop\/([a-z0-9][a-z0-9-]*)(\/wake|\/type)?$/);
     if (desktopRoute && (await desktopOn())) {
       const slug = desktopRoute[1];
       if (!(await listBots()).some((bot) => bot.slug === slug)) return send(res, 404, { error: "no such Bot" });
@@ -1433,7 +1433,14 @@ const server = http.createServer(async (req, res) => {
         if (desktop.status(slug).state === "healthy") desktop.vncSocket(slug);
         return send(res, 200, desktop.status(slug), { "cache-control": "no-store" });
       }
-      if (desktopRoute[2] && req.method === "POST") { await desktop.wake(); return send(res, 200, desktop.status(slug), { "cache-control": "no-store" }); }
+      if (desktopRoute[2] === "/wake" && req.method === "POST") { await desktop.wake(); return send(res, 200, desktop.status(slug), { "cache-control": "no-store" }); }
+      if (desktopRoute[2] === "/type" && req.method === "POST") {
+        if (!desktop.status(slug).controlled) return send(res, 409, { error: "Take control of the screen first." });
+        requireJson(req);
+        const text = pasteText((await readBody(req, 8192)).text);
+        await desktop.typeText(slug, text);
+        return send(res, 200, { ok: true }, { "cache-control": "no-store" });
+      }
     }
     if (p.startsWith("/api/")) return send(res, 404, { error: "not found" });
 
