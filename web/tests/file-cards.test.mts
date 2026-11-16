@@ -24,7 +24,7 @@ test("sizes format compactly as B, kB and MB", () => {
   }
 });
 
-test("content-length probes cache per key and survive failures", async () => {
+test("content-length probes cache per key and retry after a failure", async () => {
   fileSizeCache.clear();
   let probes = 0;
   const probe = () => {
@@ -35,7 +35,7 @@ test("content-length probes cache per key and survive failures", async () => {
   assert.equal(await cachedFileSize("library/report.pdf", probe), 1946, "the second read reuses the cached probe");
   assert.equal(probes, 1);
   assert.equal(await cachedFileSize("library/broken.pdf", () => Promise.reject(new Error("offline"))), null, "a failed probe resolves to null");
-  assert.equal(await cachedFileSize("library/broken.pdf", () => Promise.resolve(1)), null, "the failure stays cached");
+  assert.equal(await cachedFileSize("library/broken.pdf", () => Promise.resolve(1)), 1, "a later read probes again");
   assert.equal(await cachedFileSize("library/other.pdf", () => Promise.resolve(36864)), 36864, "distinct keys probe separately");
   fileSizeCache.clear();
 });

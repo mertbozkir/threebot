@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState, type ReactNode } from "react";
+import { useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { FILE_CARD_COLORS, cachedFileSize, fileSizeFromHead, formatSize, type FileGlyphKind } from "../lib/fileCards";
 import { workspaceAssetUrl } from "../lib/workspaceAssets";
 import { workspaceClient } from "../lib/workspaceTransport";
@@ -77,6 +77,20 @@ export function useFileSize(path: string | undefined, url: string | null): numbe
   return size;
 }
 
+/** True once the element has scrolled near the viewport, so long histories don't probe every file at once. */
+function useSeen(element: RefObject<HTMLElement | null>): boolean {
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    const node = element.current;
+    if (seen || !node) return;
+    if (typeof IntersectionObserver === "undefined") { setSeen(true); return; }
+    const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) setSeen(true); }, { rootMargin: "200px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [element, seen]);
+  return seen;
+}
+
 export function FileCard({ name, detail, kind, onOpen, buttonRef, workspacePath, children }: {
   name: string;
   detail: string;
@@ -86,10 +100,12 @@ export function FileCard({ name, detail, kind, onOpen, buttonRef, workspacePath,
   workspacePath?: string;
   children?: ReactNode;
 }) {
-  const url = useWorkspaceAssetUrl(workspacePath);
+  const root = useRef<HTMLDivElement>(null);
+  const visible = useSeen(root);
+  const url = useWorkspaceAssetUrl(visible ? workspacePath : undefined);
   const size = useFileSize(workspacePath, url);
   return (
-    <div className="group relative flex h-[72px] w-[355px] min-w-0 max-w-full items-center gap-[10px] rounded-[18px] border-[0.5px] border-file-card-border bg-file-card-bg pr-6 pl-[15.5px]">
+    <div ref={root} className="group relative flex h-[72px] w-[355px] min-w-0 max-w-full items-center gap-[10px] rounded-[18px] border-[0.5px] border-file-card-border bg-file-card-bg pr-6 pl-[15.5px]">
       <button type="button" ref={buttonRef} onClick={onOpen} aria-label={`Open ${name}`} title={name}
         className="flex min-w-0 flex-1 items-center gap-[10px] rounded-xl text-left focus-visible:outline-2 focus-visible:outline-accent">
         <FileGlyph kind={kind} />

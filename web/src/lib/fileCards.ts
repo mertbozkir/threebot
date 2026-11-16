@@ -58,11 +58,14 @@ export function formatSize(bytes: number | null): string | null {
 /** Content-Length probes in flight or resolved, keyed by workspace file, so a card fetches its size once. */
 export const fileSizeCache = new Map<string, Promise<number | null>>();
 
-/** Probe a size at most once per key; a failed probe resolves to null and stays cached. */
+/** Probe a size once per key; a failed or unknown size is forgotten so a later render can try again. */
 export function cachedFileSize(key: string, probe: () => Promise<number | null>): Promise<number | null> {
   const cached = fileSizeCache.get(key);
   if (cached) return cached;
-  const pending = probe().catch(() => null);
+  const pending = probe().catch(() => null).then((bytes) => {
+    if (bytes === null) fileSizeCache.delete(key);
+    return bytes;
+  });
   fileSizeCache.set(key, pending);
   return pending;
 }
