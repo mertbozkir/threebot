@@ -26,6 +26,13 @@ test("control passes keys and the pointer but never the clipboard", () => {
   assert.deepEqual(filter(Buffer.concat([key, cut, pointer])), Buffer.concat([key, pointer]));
 });
 
+test("the extended clipboard message (negative length) is dropped without stalling input behind it", () => {
+  const filter = createRfbClientFilter("control");
+  filter(handshake());
+  const caps = Buffer.from([6, 0, 0, 0, 0xff, 0xff, 0xff, 0xf8, 0x1f, 0, 0, 1, 0, 0, 0x10, 0]);
+  assert.deepEqual(filter(Buffer.concat([caps, pointer, key])), Buffer.concat([pointer, key]));
+});
+
 test("messages split across chunks are reassembled before deciding", () => {
   const filter = createRfbClientFilter("watch");
   filter(handshake());
@@ -288,10 +295,10 @@ async function slowSetup(t: { after: (fn: () => Promise<void>) => void }, ms: nu
 }
 
 test("a person can't type into a screen while the Bot's batch is still running", async (t) => {
-  const { desktop } = await slowSetup(t, 150);
+  const { desktop } = await slowSetup(t, 800);
   await desktop.enable();
   const batch = desktop.actions("alpha", [{ type: "click", x: 10, y: 10 }]);
-  await new Promise((r) => setTimeout(r, 60));
+  await new Promise((r) => setTimeout(r, 300));
   const release = desktop.takeControl("alpha");
   await assert.rejects(desktop.typeText("alpha", "hi"), /finishing a batch/);
   await batch;
@@ -301,10 +308,10 @@ test("a person can't type into a screen while the Bot's batch is still running",
 });
 
 test("a refused second batch leaves the running batch's busy flag alone", async (t) => {
-  const { desktop } = await slowSetup(t, 150);
+  const { desktop } = await slowSetup(t, 800);
   await desktop.enable();
   const first = desktop.actions("alpha", [{ type: "click", x: 10, y: 10 }]);
-  await new Promise((r) => setTimeout(r, 60));
+  await new Promise((r) => setTimeout(r, 300));
   await assert.rejects(desktop.actions("alpha", [{ type: "move", x: 5, y: 5 }]), /busy with another batch/);
   assert.equal(desktop.status("alpha").activity.busy, true);
   await first;
