@@ -509,7 +509,6 @@ function ComputerSetup({ onPane }: { onPane: (pane: string) => void }) {
   );
   return (
     <>
-      <H>Computer</H>
       <Group title="Where it runs">
         <Row title="Runs on" desc={where === "ssh" ? "A Docker host reached over SSH. Switching stops the computer; files and sign-ins stay on each machine." : "This Mac, or another machine you reach over SSH. Switching stops the computer; files and sign-ins stay on each machine."}>
           <Select label="Runs on" value={where} onChange={(next) => { setWhere(next); if (next === "mac") void save({ computer: { where: "mac" } }); }} options={[["mac", "This Mac"], ["ssh", "Another machine"]]} />
