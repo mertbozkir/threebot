@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import sharp from "sharp";
-import { CONTROLLED_MESSAGE, createDesktop, createDesktopTools, createRfbClientFilter, HELP_REQUESTED_MESSAGE, imageHash, pasteText, runArgs, xdotoolArgs, type Desktop, type DesktopOptions, type DesktopStatus, type Run } from "./desktop.mts";
+import { appleRuntime, CONTROLLED_MESSAGE, computerSetting, createDesktop, createDesktopTools, createRfbClientFilter, HELP_REQUESTED_MESSAGE, imageHash, pasteText, runArgs, shellQuote, spawnRun, sshDockerRuntime, xdotoolArgs, type Desktop, type DesktopOptions, type DesktopStatus, type Run } from "./desktop.mts";
 
 const handshake = () => Buffer.concat([Buffer.from("RFB 003.008\n", "latin1"), Buffer.from([1]), Buffer.from([0])]);
 const key = Buffer.from([4, 1, 0, 0, 0, 0, 0, 0x61]);
@@ -329,4 +329,208 @@ test("stopping forgets the pointer; switching off also forgets help requests", a
   assert.equal(desktop.status("alpha").helpRequest?.instruction, "Sign in");
   await desktop.disable();
   assert.equal(desktop.status("alpha").helpRequest, null);
+});
+
+// ---------- runtimes: docker over ssh ----------
+
+test("shellQuote always quotes and escapes single quotes", () => {
+  assert.equal(shellQuote("plain"), "'plain'");
+  assert.equal(shellQuote("a b"), "'a b'");
+  assert.equal(shellQuote("it's"), "'it'\\''s'");
+  assert.equal(shellQuote("$HOME `x` $(y)"), "'$HOME `x` $(y)'");
+  assert.equal(shellQuote("a\nb"), "'a\nb'");
+  assert.equal(shellQuote("-flag"), "'-flag'");
+  assert.equal(shellQuote(""), "''");
+});
+
+test("the ssh runtime wraps every docker verb in one ssh line with each argument quoted", () => {
+  const rt = sshDockerRuntime({ host: "box", controlPath: "/run/cm-%r" });
+  const prefix = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=3", "-o", "ControlMaster=auto", "-o", "ControlPath=/run/cm-%r", "-o", "ControlPersist=10m", "box", "--"];
+  assert.deepEqual(rt.command(["info"]), [...prefix, "docker", "'info'"]);
+  assert.deepEqual(rt.command(["rm", "-f", "threebot-desktop"]), [...prefix, "docker", "'rm'", "'-f'", "'threebot-desktop'"]);
+  assert.deepEqual(rt.command(["exec", "-u", "bot", "threebot-desktop", "xdotool", "type", "--", "a b"]), [...prefix, "docker", "'exec'", "'-u'", "'bot'", "'threebot-desktop'", "'xdotool'", "'type'", "'--'", "'a b'"]);
+});
+
+test("the ssh runtime probes home and uid, then docker, and maps its failures", async () => {
+  const rt = sshDockerRuntime({ host: "box", controlPath: "/run/cm" });
+  const calls: string[][] = [];
+  const answers: { code: number; stdout: string; stderr: string }[] = [];
+  const run: Run = async (args) => {
+    calls.push(args);
+    const next = answers.shift() ?? { code: 0, stdout: "", stderr: "" };
+    return { code: next.code, stdout: Buffer.from(next.stdout), stderr: next.stderr };
+  };
+  answers.push({ code: 0, stdout: "/home/u\n1000\n", stderr: "" });
+  assert.equal(await rt.probe(run), null);
+  assert.equal(calls.length, 2);
+  assert.match(calls[0].at(-1)!, /printf "%s\\n" "\$HOME"; id -u; mkdir -p "\$HOME\/\.threebot-desktop\/vnc"; chmod 700 "\$HOME\/\.threebot-desktop\/vnc"/);
+  assert.deepEqual(calls[1].slice(-2), ["docker", "'info'"]);
+  // the screen folder is bind-mounted from the probed home, with the hardening flags and no socket publishing
+  const started = rt.runArgs({ image: "img", hash: "h", screens: 2, socketDir: "/x" });
+  assert.ok(!started.includes("--publish-socket"));
+  assert.deepEqual(started.filter((_, i) => started[i - 1] === "-v").at(-1), "/home/u/.threebot-desktop/vnc:/tmp/vnc");
+  assert.deepEqual(started.slice(started.indexOf("--cap-add"), -1), ["--cap-add", "NET_ADMIN", "--security-opt", "no-new-privileges", "--sysctl", "net.ipv6.conf.all.disable_ipv6=1"]);
+  assert.equal(started.at(-1), "img");
+  answers.push({ code: 0, stdout: "/home/u\n1001\n", stderr: "" });
+  assert.match((await rt.probe(run))!, /The desktop needs uid 1000 on box \(yours is 1001\)/);
+  answers.length = 0;
+  answers.push({ code: 255, stdout: "", stderr: "ssh: connect to host box port 22: Connection refused" });
+  assert.equal(await rt.probe(run), "Can't reach box over SSH.");
+  answers.length = 0;
+  answers.push({ code: 0, stdout: "/home/u\n1000\n", stderr: "" });
+  answers.push({ code: 1, stdout: "", stderr: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" });
+  assert.equal(await rt.probe(run), "Docker isn't running on box.");
+  assert.equal(rt.unavailable({ code: 255, stdout: Buffer.alloc(0), stderr: "" }), "Can't reach box over SSH.");
+  assert.equal(rt.unavailable({ code: 1, stdout: Buffer.alloc(0), stderr: "Cannot connect to the Docker daemon at unix" }), "Docker isn't running on box.");
+  assert.equal(rt.unavailable({ code: 1, stdout: Buffer.alloc(0), stderr: "no such container" }), null);
+  assert.equal(appleRuntime.unavailable({ code: 255, stdout: Buffer.alloc(0), stderr: "" }), null);
+});
+
+test("the runtime table: each runtime parses its own inspect output and shapes its own build", () => {
+  assert.equal(appleRuntime.running([{ status: "running" }]), true);
+  assert.equal(appleRuntime.running([{ status: "exited" }]), false);
+  assert.equal(appleRuntime.running([{ State: { Status: "running" } }]), false);
+  assert.equal(appleRuntime.running(null), false);
+  const rt = sshDockerRuntime({ host: "box", controlPath: "/run/cm" });
+  assert.equal(rt.running([{ State: { Status: "running" } }]), true);
+  assert.equal(rt.running([{ State: { Status: "exited" } }]), false);
+  assert.equal(rt.running([{ status: "running" }]), false);
+  assert.equal(rt.running(null), false);
+  assert.deepEqual(appleRuntime.buildArgs("img", "/dir"), { args: ["build", "-t", "img", "/dir"] });
+  assert.deepEqual(rt.buildArgs("img", "/dir"), { args: ["build", "-t", "img", "-"], stdinFrom: "/dir" });
+  assert.deepEqual(appleRuntime.removeArgs(), ["delete", "--force", "threebot-desktop"]);
+  assert.deepEqual(rt.removeArgs(), ["rm", "-f", "threebot-desktop"]);
+});
+
+/** A fake Docker host behind ssh: every call must arrive as one quoted ssh line, and the image is built once. */
+function fakeSshHost(png: Buffer) {
+  const calls: { args: string[]; options?: { timeoutMs?: number; stdinFrom?: string }; remote: string[] }[] = [];
+  let container = false;
+  let image = false;
+  let down = false;
+  const run: Run = async (args, options) => {
+    const remote = args.slice(args.indexOf("--") + 1);
+    calls.push({ args, options, remote });
+    if (down) return { code: 255, stdout: Buffer.alloc(0), stderr: "ssh: connect to host box port 22: Connection refused" };
+    if (args[0] !== "ssh") throw new Error(`expected an ssh line, got: ${args[0]}`);
+    const ok = (stdout: Buffer | string = "") => ({ code: 0, stdout: Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout), stderr: "" });
+    if (remote[0] === "'sh'") return ok("/home/u\n1000\n");
+    if (remote[0] === "docker") {
+      switch (remote[1]) {
+        case "'info'": return ok();
+        case "'image'": return image ? ok() : { code: 1, stdout: Buffer.alloc(0), stderr: "no such image" };
+        case "'build'": image = true; return ok();
+        case "'run'": container = true; return ok();
+        case "'rm'": container = false; return ok();
+        case "'inspect'": return container ? ok(JSON.stringify([{ State: { Status: "running" } }])) : { code: 1, stdout: Buffer.alloc(0), stderr: "no such container" };
+        case "'exec'": return remote.includes("'sh'") ? ok(png) : ok();
+        default: return ok();
+      }
+    }
+    return ok();
+  };
+  return { run, calls, fail: () => { down = true; }, recover: () => { down = false; } };
+}
+
+async function sshSetup(t: { after: (fn: () => Promise<void>) => void }) {
+  const root = await mkdtemp(path.join(tmpdir(), "desktop-ssh-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const imageDir = path.join(root, "image");
+  await mkdir(imageDir);
+  await writeFile(path.join(imageDir, "Dockerfile"), "FROM scratch\n");
+  const png = await sharp({ create: { width: 1920, height: 1200, channels: 3, background: "#ccc" } }).png().toBuffer();
+  const fake = fakeSshHost(png);
+  const desktop = createDesktop({ imageDir, socketDir: path.join(root, "vnc"), runtime: sshDockerRuntime({ host: "box", controlPath: path.join(root, "cm") }), run: fake.run, screens: 2, idleMs: 60_000 });
+  return { desktop, fake, imageDir };
+}
+
+test("over ssh, the desktop probes, starts docker with the bind-mounted screen folder and hardening, and serves screenshots", async (t) => {
+  const { desktop, fake } = await sshSetup(t);
+  await desktop.enable();
+  assert.equal(desktop.status(null).state, "stopped");
+  await desktop.wake();
+  assert.equal(desktop.status(null).state, "healthy");
+  const started = fake.calls.find((call) => call.remote[1] === "'run'")!;
+  assert.ok(!started.args.includes("'--publish-socket'"));
+  assert.deepEqual(started.remote.filter((_, i) => started.remote[i - 1] === "'-v'").at(-1), "'/home/u/.threebot-desktop/vnc:/tmp/vnc'");
+  for (const flag of ["'--cap-add'", "'NET_ADMIN'", "'--security-opt'", "'no-new-privileges'", "'--sysctl'", "'net.ipv6.conf.all.disable_ipv6=1'"]) assert.ok(started.remote.includes(flag), flag);
+  const meta = await sharp(Buffer.from(await desktop.screenshot("alpha"), "base64")).metadata();
+  assert.deepEqual([meta.width, meta.height], [1280, 800]);
+  assert.match(desktop.vncSocket("beta")!, /2\.sock$/);
+  await desktop.disable();
+  assert.equal(fake.calls.filter((call) => call.remote.includes("'rm'")).length, 2);
+});
+
+test("an ssh build reads the image folder as a tar on stdin", async (t) => {
+  const { desktop, fake, imageDir } = await sshSetup(t);
+  await desktop.enable();
+  const build = fake.calls.find((call) => call.remote[1] === "'build'")!;
+  assert.equal(build.remote.at(-1), "'-'");
+  assert.equal(build.options?.stdinFrom, imageDir);
+  assert.equal(build.remote.filter((arg) => arg === "'build'").length, 1);
+  await desktop.disable();
+});
+
+test("an ssh drop marks the desktop unavailable and the next call re-probes", async (t) => {
+  const { desktop, fake } = await sshSetup(t);
+  await desktop.enable();
+  await desktop.wake();
+  fake.fail();
+  await assert.rejects(desktop.screenshot("alpha"), /Screenshot failed/);
+  assert.equal(desktop.status(null).state, "unavailable");
+  assert.equal(desktop.status(null).reason, "Can't reach box over SSH.");
+  await assert.rejects(desktop.wake(), (error: unknown) => (error as { status?: number }).status === 503 && /Can't reach box over SSH/.test((error as Error).message));
+  fake.recover();
+  await desktop.wake();
+  assert.equal(desktop.status(null).state, "healthy");
+  await desktop.disable();
+});
+
+test("while the image is building, screenshot and actions fail fast instead of waiting for it", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "desktop-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const imageDir = path.join(root, "image");
+  await mkdir(imageDir);
+  await writeFile(path.join(imageDir, "Dockerfile"), "FROM scratch\n");
+  const png = await sharp({ create: { width: 1920, height: 1200, channels: 3, background: "#ccc" } }).png().toBuffer();
+  const base = fakeRuntime(png);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const run: Run = async (args, options) => {
+    if (args[0] === "image") return { code: 1, stdout: Buffer.alloc(0), stderr: "" };
+    if (args[0] === "build") { await gate; return { code: 0, stdout: Buffer.alloc(0), stderr: "" }; }
+    return base.run(args, options);
+  };
+  const desktop = createDesktop({ imageDir, socketDir: path.join(root, "vnc"), run, screens: 2, idleMs: 60_000 });
+  const enabling = desktop.enable();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(desktop.status(null).state, "building");
+  await assert.rejects(desktop.screenshot("alpha"), /The computer is still being prepared\. Try again in a minute\./);
+  await assert.rejects(desktop.actions("alpha", [{ type: "click", x: 1, y: 1 }]), /still being prepared/);
+  release();
+  await enabling;
+  assert.equal(desktop.status(null).state, "stopped");
+  await desktop.disable();
+});
+
+test("spawnRun pipes a tar of stdinFrom into the command's stdin", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "desktop-tar-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(path.join(root, "Dockerfile"), "FROM scratch\n");
+  const result = await spawnRun("cat")([], { stdinFrom: root });
+  assert.equal(result.code, 0);
+  assert.ok(result.stdout.includes(Buffer.from("Dockerfile")));
+});
+
+test("computerSetting accepts the default, mac and an ssh host, and rejects the rest", () => {
+  assert.deepEqual(computerSetting(undefined), { where: "mac" });
+  assert.deepEqual(computerSetting(null), { where: "mac" });
+  assert.deepEqual(computerSetting({ where: "mac" }), { where: "mac" });
+  assert.deepEqual(computerSetting({ where: "ssh", host: "box.lan" }), { where: "ssh", host: "box.lan" });
+  assert.deepEqual(computerSetting({ where: "ssh", host: "me@10.0.0.9" }), { where: "ssh", host: "me@10.0.0.9" });
+  assert.deepEqual(computerSetting({ where: "ssh", host: "a".repeat(253) }), { where: "ssh", host: "a".repeat(253) });
+  const bad = (value: unknown) => assert.throws(() => computerSetting(value), (error: unknown) => (error as { status?: number }).status === 400);
+  bad({ where: "ssh" }); bad({ where: "ssh", host: "" }); bad({ where: "ssh", host: "a b" });
+  bad({ where: "ssh", host: "-box" }); bad({ where: "ssh", host: "a".repeat(254) }); bad({ where: "ssh", host: 7 });
+  bad({ where: "cluster" }); bad("box"); bad(true);
 });
