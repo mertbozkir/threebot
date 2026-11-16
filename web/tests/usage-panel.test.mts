@@ -34,11 +34,12 @@ test('groupUsage folds the smallest series into Other and aligns per-day arrays 
   ];
   const series = groupUsage(rows, 'bot', { oso: 'Open Source Officer', net: 'Network Officer' }, days);
   assert.deepEqual(series.map((s) => s.name), ['Open Source Officer', 'Network Officer', 'chief', 'ghost', 'Other']);
-  assert.deepEqual(series[0].inp, [100, 0, 200]);
+  // Cached input counts: the 50 cache reads on Nov 16 are part of that day's input.
+  assert.deepEqual(series[0].inp, [100, 0, 250]);
   assert.deepEqual(series[0].out, [10, 0, 20]);
   assert.deepEqual(series[1].inp, [0, 60, 0]);
   assert.deepEqual(series[1].out, [0, 6, 0]);
-  assert.equal(series[0].totalIn, 300);
+  assert.equal(series[0].totalIn, 350);
   assert.equal(series[0].totalOut, 30);
   // ops, the smallest, folds into Other with its totals kept.
   assert.equal(series[4].name, 'Other');

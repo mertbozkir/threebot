@@ -82,8 +82,10 @@ export function groupUsage(rows: readonly UsageRow[], by: "bot" | "source" | "mo
     let series = buckets.get(key);
     if (!series) { series = { key, name: names[key] ?? key, inp: empty(), out: empty(), totalIn: 0, totalOut: 0 }; buckets.set(key, series); }
     const at = days.indexOf(row.day);
-    if (at >= 0) { series.inp[at] += row.input; series.out[at] += row.output; }
-    series.totalIn += row.input; series.totalOut += row.output;
+    // Cache reads are input the model processed; leaving them out makes cache-heavy Bots look idle.
+    const inp = totalIn(row);
+    if (at >= 0) { series.inp[at] += inp; series.out[at] += row.output; }
+    series.totalIn += inp; series.totalOut += row.output;
   }
   const sorted = [...buckets.values()].sort((a, b) => b.totalIn + b.totalOut - (a.totalIn + a.totalOut));
   const top = sorted.slice(0, 4), rest = sorted.slice(4);
