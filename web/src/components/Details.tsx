@@ -22,7 +22,7 @@ import type { Bot, ModelSelection, ScheduledTask } from "../lib/types";
 
 import { chatDraft } from "../lib/chatDrafts";
 import { enablePushNotifications } from "../lib/push";
-import { formatTokens, readBotUsage } from "../lib/usageApi";
+import { formatTokens, readBotUsage, totalIn } from "../lib/usageApi";
 import "./routines.css";
 import { changeRoutineEnabled, changeRoutineFreshSession, copyWebhookUrl, displayTimezone, removeRoutine, routineDate, routineHistory, scheduleText, testRoutine, threadMode } from "../lib/routines";
 export { scheduleText } from "../lib/routines";
@@ -201,7 +201,7 @@ function BotUsageLine({ bot }: { bot: Bot }) {
   useEffect(() => {
     let live = true;
     readBotUsage(7).then((data) => {
-      if (live) setTotal(data.rows.filter((row) => row.bot === bot.slug).reduce((sum, row) => sum + row.input + row.output, 0));
+      if (live) setTotal(data.rows.filter((row) => row.bot === bot.slug).reduce((sum, row) => sum + totalIn(row) + row.output, 0));
     }).catch(() => {});
     return () => { live = false; };
   }, [bot.slug]);
