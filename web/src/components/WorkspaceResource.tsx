@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { Download, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowUp, Download, ZoomIn, ZoomOut } from "lucide-react";
 import { workspaceAssetUrl } from "../lib/workspaceAssets";
 import { workspaceFileKind, workspaceLinkPath, type LibraryResource } from "../lib/workspaceLinks";
 import { workspaceClient } from "../lib/workspaceTransport";
@@ -62,7 +62,7 @@ function reportResourceFailure(stage: string, resource: LibraryResource | null, 
   console.error("[workspace-resource]", { stage, resourceType: resource?._tag, fileKind, message });
 }
 
-type ResourceViewerProps = { scopeThreadId?: string | null; resource: LibraryResource | null; title: string; fileKind?: ReturnType<typeof workspaceFileKind>; onClose: () => void; renderText?: (text: string) => ReactNode };
+type ResourceViewerProps = { scopeThreadId?: string | null; resource: LibraryResource | null; title: string; fileKind?: ReturnType<typeof workspaceFileKind>; onClose: () => void; renderText?: (text: string) => ReactNode; onAsk?: (text: string) => void };
 
 const PDF_ZOOM_PERCENT = { min: 50, max: 200, step: 25 };
 
@@ -75,7 +75,7 @@ export function WorkspaceResourceViewer(props: ResourceViewerProps) {
   return <ImageViewer images={[{ key: JSON.stringify(resource), alt: title, name: title, resource }]} initialIndex={0} onClose={onClose} scopeThreadId={scopeThreadId ?? workspaceContext?.threadId ?? null} />;
 }
 
-function ResourceSheet({ resource, title, fileKind, onClose, renderText, scopeThreadId }: ResourceViewerProps) {
+function ResourceSheet({ resource, title, fileKind, onClose, renderText, scopeThreadId, onAsk }: ResourceViewerProps) {
   const sidebarWidth = useApp(s => s.sidebarCompact ? 72 : s.sidebarWidth);
   const workspaceContext = useContext(WorkspaceFileContext);
   const ownerThreadId = scopeThreadId ?? workspaceContext?.threadId ?? null;
@@ -141,7 +141,8 @@ function ResourceSheet({ resource, title, fileKind, onClose, renderText, scopeTh
     {original && <a href={original} target="_blank" rel="noreferrer" aria-label="Download original file" title="Download original file" className="grid size-8 shrink-0 place-items-center rounded-full text-muted transition-colors hover:bg-hover hover:text-fg"><Download size={16} /></a>}
   </div>;
   return <Modal backdropClassName="workspace-page-backdrop" backdropStyle={{ left: sidebarWidth }} title={<span className="workspace-file-chip" title={title}>{title}</span>} onClose={onClose} headerActions={headerActions} className={`workspace-resource-sheet workspace-page-sheet ${resolvedFileKind === "html" || /\.csv$/i.test(title) ? "workspace-document-sheet" : ""}`}>
-    <div className="scroll-thin min-h-0 flex-1 overflow-auto">
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="scroll-thin min-h-0 flex-1 overflow-auto">
       {state.kind === "loading" && <p role="status" className="p-6 text-center text-[14px] text-muted">Loading file…</p>}
       {state.kind === "error" && <div role="alert" className="p-6 text-center text-[14px] text-muted"><p>Couldn't open this file. It may be unavailable or access may have expired.</p><button className="mt-3 rounded-full bg-active px-4 py-2 text-fg" onClick={() => setAttempt((value) => value + 1)}>Retry</button></div>}
       {state.kind === "ready" && <>
@@ -153,8 +154,34 @@ function ResourceSheet({ resource, title, fileKind, onClose, renderText, scopeTh
         {resolvedFileKind === "text" && state.content !== null && <div className="chat-file-content md mx-auto max-w-[760px] px-6 py-6 text-[14.5px] leading-[1.6]">{renderText ? renderText(state.content) : /\.csv$/i.test(title) ? <CsvPreview text={state.content} /> : <pre className="whitespace-pre-wrap break-words">{state.content}</pre>}</div>}
         {resolvedFileKind === "file" && <p className="p-6 text-center text-[14px] text-muted">Preview isn't available for this file.</p>}
       </>}
+      </div>
+      {onAsk && <ResourceComposer title={title} onClose={onClose} onAsk={onAsk} />}
     </div>
   </Modal>;
+}
+
+function ResourceComposer({ title, onClose, onAsk }: { title: string; onClose: () => void; onAsk: (text: string) => void }) {
+  const [text, setText] = useState("");
+  const placeholder = `Message about “${title}”`;
+  const send = () => {
+    const value = text.trim();
+    if (!value) return;
+    onAsk(value);
+    setText("");
+    onClose();
+  };
+  return <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center px-4 pb-5">
+    <div className="pointer-events-auto flex w-full max-w-[640px] items-center gap-2 rounded-full border border-line bg-elevated/95 py-2 pr-2 pl-4 shadow-[var(--shadow-pop)]">
+      <textarea rows={1} value={text} placeholder={placeholder} aria-label={placeholder}
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); }
+          else if (event.key === "Escape" && text) event.stopPropagation();
+        }}
+        className="max-h-40 min-w-0 flex-1 resize-none bg-transparent py-1 text-[15px] leading-5 outline-none placeholder:text-muted" />
+      <IconButton aria-label="Send" title="Send" disabled={!text.trim()} onClick={send} className="size-8 shrink-0 rounded-full bg-active text-fg hover:opacity-90 disabled:opacity-40"><ArrowUp size={16} aria-hidden="true" /></IconButton>
+    </div>
+  </div>;
 }
 
 function CsvPreview({ text }: { text: string }) {

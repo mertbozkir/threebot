@@ -311,3 +311,54 @@ test("a refused file explains why and keeps the original-file link", async () =>
   assert.match(document.querySelector('[role="dialog"] [role="alert"]').textContent, /isn't a readable \.docx file. It may be password-protected/);
   assert.equal(document.querySelector('[role="dialog"] a').getAttribute("href"), "/t3/assets/signed-1");
 });
+
+const SMALL_SHEET = xlsx({ sheet1: `<worksheet xmlns="${S}"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Number</t></is></c></row></sheetData></worksheet>` });
+const type = async (element: HTMLTextAreaElement, value: string) => act(async () => {
+  Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set.call(element, value);
+  element.dispatchEvent(new window.Event("input", { bubbles: true }));
+});
+
+test("the viewer composer is only there when opened from a chat, sends on Enter and closes after sending", async () => {
+  body = SMALL_SHEET;
+  const asked = [];
+  let closed = 0;
+  const mountViewer = (withAsk: boolean) => act(async () => {
+    root.render(h(WorkspaceResourceViewer, { resource: { _tag: "workspace-file", threadId: "main", path: "library/rows.xlsx" }, title: "rows.xlsx", onClose: () => { closed++; },
+      ...(withAsk ? { onAsk: (text: string) => asked.push(text) } : {}) }));
+  });
+  await mountViewer(false);
+  await settle(() => !!document.querySelector('[role="dialog"] table'));
+  assert.equal(document.querySelector("textarea"), null, "without a chat there is no composer");
+  await act(async () => root.unmount());
+  host.remove();
+  host = document.createElement("main"); document.body.append(host); root = createRoot(host);
+  await mountViewer(true);
+  await settle(() => !!document.querySelector('[role="dialog"] textarea'));
+  const input = document.querySelector("textarea");
+  assert.equal(input.placeholder, "Message about “rows.xlsx”");
+  await act(async () => { input.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
+  assert.deepEqual(asked, [], "an empty message never sends");
+  assert.equal(closed, 0);
+  await type(input, "What is in row 2?");
+  await act(async () => { input.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true })); });
+  assert.deepEqual(asked, [], "Shift+Enter inserts a newline instead of sending");
+  await act(async () => { input.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
+  assert.deepEqual(asked, ["What is in row 2?"]);
+  assert.equal(closed, 1, "sending closes the viewer");
+});
+
+test("the composer's Escape closes the viewer on an empty message and keeps it while typing", async () => {
+  body = SMALL_SHEET;
+  const asked = [];
+  let closed = 0;
+  await act(async () => { root.render(h(WorkspaceResourceViewer, { resource: { _tag: "workspace-file", threadId: "main", path: "library/rows.xlsx" }, title: "rows.xlsx", onClose: () => { closed++; }, onAsk: (text: string) => asked.push(text) })); });
+  await settle(() => !!document.querySelector('[role="dialog"] textarea'));
+  const input = document.querySelector("textarea");
+  await type(input, "Still typing");
+  await act(async () => { input.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+  assert.equal(closed, 0, "Escape while typing keeps the viewer open");
+  await type(input, "");
+  await act(async () => { input.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+  assert.equal(closed, 1, "Escape on an empty message closes the viewer");
+  assert.deepEqual(asked, []);
+});

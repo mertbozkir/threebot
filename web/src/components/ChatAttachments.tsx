@@ -48,7 +48,7 @@ function attachmentsFrom(values: unknown[]): ChatAttachment[] {
   });
 }
 
-export function ChatAttachmentList({ attachments, align = "end" }: { attachments: unknown[]; align?: "start" | "end" }) {
+export function ChatAttachmentList({ attachments, align = "end", onAsk }: { attachments: unknown[]; align?: "start" | "end"; onAsk?: (fileName: string, text: string) => void }) {
   const items = useMemo(() => attachmentsFrom(attachments), [attachments]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = items.find((item) => item.id === selectedId);
@@ -60,7 +60,8 @@ export function ChatAttachmentList({ attachments, align = "end" }: { attachments
     <div className={clsx("chat-attachments mb-1 flex min-w-0 flex-wrap gap-1.5", align === "start" ? "justify-start" : "justify-end")}>
       {items.map((attachment) => <Attachment key={attachment.id} attachment={attachment} onOpen={() => setSelectedId(attachment.id)} />)}
     </div>
-    {selected && <WorkspaceResourceViewer key={selected.id} resource={resource} title={selected.name} fileKind={selected.fileKind} onClose={() => setSelectedId(null)} />}
+    {selected && <WorkspaceResourceViewer key={selected.id} resource={resource} title={selected.name} fileKind={selected.fileKind} onClose={() => setSelectedId(null)}
+      onAsk={onAsk ? (text) => onAsk(selected.name, text) : undefined} />}
   </>;
 }
 
