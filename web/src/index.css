@@ -66,8 +66,8 @@
   --overlay: #000000b2;
   --shadow-pop: 0 0 0 0.5px #f2f0fb21;
   --merged: #a371f7;
-  --file-card-bg: color-mix(in srgb, #ffffff 8%, var(--bg-chat));
-  --file-card-border: rgb(255 255 255 / 0.04);
+  --file-card-bg: #252525;
+  --file-card-border: #2e2e2e;
   --file-card-tile: #343434;
   --file-card-line: #626262;
   --file-card-grid: #4a4a4a;

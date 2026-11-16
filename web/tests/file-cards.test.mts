@@ -49,6 +49,13 @@ test("fileSizeFromHead reads Content-Length and rejects nothing", async () => {
     assert.equal(await fileSizeFromHead("https://assets.example/library/report.pdf"), null, "a missing file has no size");
     globalThis.fetch = (() => Promise.reject(new Error("offline"))) as typeof fetch;
     assert.equal(await fileSizeFromHead("https://assets.example/library/report.pdf"), null, "a failed request resolves to null");
+    // The asset proxy answers HEAD without a length; a one-byte range request carries the total.
+    globalThis.fetch = ((_url: string, init?: RequestInit) => Promise.resolve(init?.method === "HEAD"
+      ? new Response(null, { status: 200 })
+      : new Response("x", { status: 206, headers: { "Content-Range": "bytes 0-0/36864" } }))) as typeof fetch;
+    assert.equal(await fileSizeFromHead("https://assets.example/library/report.docx"), 36864);
+    globalThis.fetch = ((_url: string, init?: RequestInit) => Promise.resolve(init?.method === "HEAD" ? new Response(null, { status: 200 }) : new Response("whole file", { status: 200 }))) as typeof fetch;
+    assert.equal(await fileSizeFromHead("https://assets.example/library/report.docx"), null, "no range support means no size, never a guess");
   } finally {
     globalThis.fetch = original;
   }

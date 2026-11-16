@@ -143,7 +143,7 @@ export function FileCard({ name, detail, kind, onOpen, buttonRef, workspacePath,
   const url = useWorkspaceAssetUrl(workspacePath);
   const size = useFileSize(workspacePath, url);
   return (
-    <div className="group relative flex h-[72px] w-[355px] min-w-0 max-w-full items-center gap-[13px] rounded-[18px] border border-file-card-border bg-file-card-bg pr-6 pl-5">
+    <div className="group relative flex h-[72px] w-[355px] min-w-0 max-w-full items-center gap-[13px] rounded-[18px] border-[0.5px] border-file-card-border bg-file-card-bg pr-6 pl-5">
       <button type="button" ref={buttonRef} onClick={onOpen} aria-label={`Open ${name}`} title={name}
         className="flex min-w-0 flex-1 items-center gap-[13px] rounded-xl text-left focus-visible:outline-2 focus-visible:outline-accent">
         <FileGlyph kind={kind} />

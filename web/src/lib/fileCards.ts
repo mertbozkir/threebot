@@ -68,12 +68,24 @@ export function cachedFileSize(key: string, probe: () => Promise<number | null>)
 }
 
 /** HEAD a signed asset URL and read its Content-Length; null when the size is unavailable. */
-export function fileSizeFromHead(url: string): Promise<number | null> {
-  return fetch(url, { method: "HEAD" }).then((response) => {
-    const header = response.ok ? response.headers.get("Content-Length") : null;
-    const length = Number(header);
-    return header !== null && Number.isFinite(length) && length >= 0 ? length : null;
-  }, () => null);
+const byteCount = (value: string | null | undefined) => {
+  const length = Number(value);
+  return value != null && value !== "" && Number.isSafeInteger(length) && length >= 0 ? length : null;
+};
+
+/** Size from a HEAD's Content-Length, else from a one-byte range request's Content-Range total (the asset proxy sends HEADs without a length). */
+export async function fileSizeFromHead(url: string): Promise<number | null> {
+  try {
+    const head = await fetch(url, { method: "HEAD" });
+    const length = head.ok ? byteCount(head.headers.get("Content-Length")) : null;
+    if (length !== null) return length;
+    const ranged = await fetch(url, { headers: { Range: "bytes=0-0" } });
+    const total = ranged.status === 206 ? byteCount(/\/(\d+)\s*$/.exec(ranged.headers.get("Content-Range") ?? "")?.[1]) : null;
+    await ranged.body?.cancel().catch(() => {});
+    return total;
+  } catch {
+    return null;
+  }
 }
 
 export function aboutFilePrompt(fileName: string, workspacePath: string | null | undefined, text: string): string {
