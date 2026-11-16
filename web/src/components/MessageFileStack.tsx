@@ -6,9 +6,8 @@ import { WorkspaceFileContext } from "./WorkspaceResource";
 import { workspaceLinkPath } from "../lib/workspaceLinks";
 import {
   fileGlyphKind, fileTypeLabel, formatSize, mediaDuration, mediaFileKind, mediaRowTiles,
-  messageFileLinks, soloMarkdownLink, stackPage, type MessageFileLink,
+  messageFileLinks, stackPage, type MessageFileLink,
 } from "../lib/fileCards";
-import { splitBubbles } from "../lib/chatBehavior";
 
 function linkName(link: MessageFileLink): string {
   return link.text.trim() || link.path.split("/").at(-1) || link.path;
@@ -45,8 +44,8 @@ function AudioFileCard({ link }: { link: MessageFileLink }) {
     if (audio.current) audio.current.playbackRate = next;
   };
   return (
-    <div className="flex h-[120px] w-[355px] min-w-0 max-w-full flex-col justify-center gap-[15px] rounded-[18px] border border-file-card-border bg-file-card-bg pr-6 pl-5">
-      <div className="flex items-center gap-[13px]">
+    <div className="flex h-[120px] w-[355px] min-w-0 max-w-full flex-col justify-center gap-[15px] rounded-[18px] border-[0.5px] border-file-card-border bg-file-card-bg pr-6 pl-[15.5px]">
+      <div className="flex items-center gap-[10px]">
         <FileGlyph kind="audio" />
         <span className="min-w-0">
           <span className="block truncate text-[15px] leading-5">{linkName(link)}</span>
@@ -129,10 +128,7 @@ export const MessageFileStack = memo(function MessageFileStack({ text }: { text:
   const [expanded, setExpanded] = useState(false);
   const resolve = useCallback((href: string) => (workspace ? workspaceLinkPath(href, workspace.workspaceRoot, workspace.fromPath) : null), [workspace]);
   const links = useMemo(() => messageFileLinks(text, resolve), [text, resolve]);
-  const files = useMemo(() => {
-    const solo = new Set(splitBubbles(text).flatMap((part) => soloMarkdownLink(part, resolve)?.path ?? []));
-    return links.filter((link) => !solo.has(link.path));
-  }, [text, links, resolve]);
+  const files = links;
   if (!workspace) return null;
   const page = stackPage(files, expanded);
   if (!page.files.length) return null;

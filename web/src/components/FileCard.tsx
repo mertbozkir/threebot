@@ -5,7 +5,7 @@ import { workspaceClient } from "../lib/workspaceTransport";
 import { WorkspaceFileContext } from "./WorkspaceResource";
 
 const BANDS: Partial<Record<FileGlyphKind, { color: string; height: string }>> = {
-  pdf: { color: FILE_CARD_COLORS.pdf, height: "31%" },
+  pdf: { color: FILE_CARD_COLORS.pdf, height: "28%" },
   sheet: { color: FILE_CARD_COLORS.sheet, height: "31%" },
   doc: { color: FILE_CARD_COLORS.doc, height: "31%" },
   slides: { color: FILE_CARD_COLORS.slides, height: "35%" },
@@ -29,10 +29,10 @@ function GlyphBody({ kind }: { kind: FileGlyphKind }) {
       return (
         <svg className="absolute inset-0 h-full w-full" viewBox="0 0 33 39" aria-hidden="true">
           <g className="fill-file-card-line">
-            <rect x="5" y="4" width="10.5" height="3" rx="1.5" />
-            <rect x="19" y="4" width="9" height="8" rx="2" />
-            <rect x="5" y="12" width="23" height="3" rx="1.5" />
-            <rect x="5" y="20" width="10.5" height="3" rx="1.5" />
+            <rect x="5" y="4" width="23" height="3" rx="1.5" />
+            <rect x="5" y="11" width="9" height="3" rx="1.5" />
+            <rect x="5" y="18" width="9" height="3" rx="1.5" />
+            <rect x="17.5" y="11" width="11" height="10" rx="2" />
           </g>
         </svg>
       );
@@ -68,8 +68,8 @@ function GlyphBody({ kind }: { kind: FileGlyphKind }) {
       return (
         <svg className="absolute inset-0 h-full w-full" viewBox="0 0 33 39" aria-hidden="true">
           <g className="fill-file-card-line">
-            {[4, 10, 16, 22, 28].map((y, index) => (
-              <rect key={y} x={index % 2 ? 16.5 : 13.5} y={y} width="3" height="5" rx="1.5" />
+            {[0, 4, 8, 12, 16, 20].map((y, index) => (
+              <rect key={y} x={index % 2 ? 8 : 16.5} y={y} width={index % 2 ? 8.5 : 8} height="3.5" rx="1.75" />
             ))}
           </g>
         </svg>
@@ -92,10 +92,13 @@ function GlyphBody({ kind }: { kind: FileGlyphKind }) {
 export function FileGlyph({ kind }: { kind: FileGlyphKind }) {
   const band = BANDS[kind];
   return (
-    <span aria-hidden="true" data-glyph={kind}
-      className={`relative shrink-0 overflow-hidden bg-file-card-tile ${kind === "slides" ? "h-[35px] w-[41px] rounded-[8px]" : "h-[39px] w-[33px] rounded-[7px]"}`}>
-      <GlyphBody kind={kind} />
-      {band && <span className="absolute inset-x-0 bottom-0" style={{ backgroundColor: band.color, height: band.height }} />}
+    // A fixed 41px slot centers portrait and landscape tiles alike, so file names line up.
+    <span aria-hidden="true" className="flex w-[41px] shrink-0 justify-center">
+      <span data-glyph={kind}
+        className={`relative shrink-0 overflow-hidden bg-file-card-tile ${kind === "slides" ? "h-[35px] w-[41px] rounded-[8px]" : "h-[39px] w-[33px] rounded-[7px]"}`}>
+        <GlyphBody kind={kind} />
+        {band && <span className="absolute inset-x-0 bottom-0" style={{ backgroundColor: band.color, height: band.height }} />}
+      </span>
     </span>
   );
 }
@@ -143,9 +146,9 @@ export function FileCard({ name, detail, kind, onOpen, buttonRef, workspacePath,
   const url = useWorkspaceAssetUrl(workspacePath);
   const size = useFileSize(workspacePath, url);
   return (
-    <div className="group relative flex h-[72px] w-[355px] min-w-0 max-w-full items-center gap-[13px] rounded-[18px] border-[0.5px] border-file-card-border bg-file-card-bg pr-6 pl-5">
+    <div className="group relative flex h-[72px] w-[355px] min-w-0 max-w-full items-center gap-[10px] rounded-[18px] border-[0.5px] border-file-card-border bg-file-card-bg pr-6 pl-[15.5px]">
       <button type="button" ref={buttonRef} onClick={onOpen} aria-label={`Open ${name}`} title={name}
-        className="flex min-w-0 flex-1 items-center gap-[13px] rounded-xl text-left focus-visible:outline-2 focus-visible:outline-accent">
+        className="flex min-w-0 flex-1 items-center gap-[10px] rounded-xl text-left focus-visible:outline-2 focus-visible:outline-accent">
         <FileGlyph kind={kind} />
         <span className="min-w-0">
           <span className="block truncate text-[15px] leading-5">{name}</span>

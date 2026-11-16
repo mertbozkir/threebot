@@ -144,7 +144,7 @@ export function soloMarkdownLink(text: string, resolve: (href: string) => string
   return match && path ? { href: match[2], path, text: match[1] } : null;
 }
 
-export const FILE_STACK_LIMIT = 12;
+export const FILE_STACK_LIMIT = 24;
 
 export function stackPage<T>(files: T[], expanded: boolean): { files: T[]; hidden: number } {
   if (expanded || files.length <= FILE_STACK_LIMIT) return { files, hidden: 0 };

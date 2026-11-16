@@ -37,13 +37,13 @@ test("paragraph-only links are excluded from the stack, other positions are kept
   assert.equal(soloMarkdownLink("[outside.pdf](../elsewhere/outside.pdf)", resolve), null);
 });
 
-test("the stack caps at twelve cards and expands on demand", () => {
-  const files = Array.from({ length: 15 }, (_, index) => ({ href: `library/f${index}.pdf`, path: `library/f${index}.pdf`, text: `f${index}` }));
+test("the stack caps at twenty-four cards and expands on demand", () => {
+  const files = Array.from({ length: 27 }, (_, index) => ({ href: `library/f${index}.pdf`, path: `library/f${index}.pdf`, text: `f${index}` }));
   const page = stackPage(files, false);
   assert.equal(page.files.length, FILE_STACK_LIMIT);
   assert.equal(page.hidden, 3);
   assert.deepEqual(stackPage(files, true), { files, hidden: 0 });
-  assert.deepEqual(stackPage(files.slice(0, 12), false), { files: files.slice(0, 12), hidden: 0 });
+  assert.deepEqual(stackPage(files.slice(0, 24), false), { files: files.slice(0, 24), hidden: 0 });
 });
 
 test("glyph kinds map each file family", () => {

@@ -9,7 +9,7 @@ import { BotExchange } from "./BotExchange";
 import { ApprovalCard, AutomatedCard, DateSep, ErrorLine, EventLine, FileCard, PageCard, QuestionCard, SecretCard, SubagentCard, ToolImage, useBotsByThread } from "./Cards";
 import { WorkspaceFileContext, WorkspaceMessageImage, WorkspaceResourceViewer } from "./WorkspaceResource";
 import { workspaceFilePath, workspaceLinkPath } from "../lib/workspaceLinks";
-import { fileGlyphKind, fileTypeLabel, soloFileLinkParagraph, aboutFilePrompt } from "../lib/fileCards";
+import { fileGlyphKind, fileTypeLabel, soloFileLinkParagraph, soloMarkdownLink, aboutFilePrompt } from "../lib/fileCards";
 import { FileCard as DocumentCard } from "./FileCard";
 import { MessageFileStack } from "./MessageFileStack";
 import { RichMarkdown } from "./RichMarkdown";
@@ -312,7 +312,9 @@ function EntryView({ entry, prev, bot, threadId, onOpenFile, onReply, accent, on
 
 export function BotBubble({ text, threadId, itemId, runId, onReply }: { text: string; threadId?: string; itemId?: string; runId?: string | null; onReply?: (text: string) => void }) {
   // Agents often write several short paragraphs; they read best as stacked bubbles.
-  const parts = splitBubbles(text);
+  const workspace = useContext(WorkspaceFileContext);
+  // A bubble that is only a file link is drawn by the file stack below, with its card, player or thumbnail.
+  const parts = splitBubbles(text).filter((part) => !workspace || !soloMarkdownLink(part, (href) => workspaceLinkPath(href, workspace.workspaceRoot, workspace.fromPath)));
   return (
     <ChatMessageActions text={text} threadId={threadId} itemId={itemId} runId={runId} onReply={onReply} side="bot">
       <MessageImages>
