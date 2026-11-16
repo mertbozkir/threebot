@@ -8,6 +8,7 @@ import { Details } from "./components/Details";
 import { DeleteBotDialog, NewBotDialog, RenameBotDialog } from "./components/NewBotDialog";
 import { AdoptProjectDialog } from "./components/AdoptProjectDialog";
 import { SearchDialog } from "./components/SearchDialog";
+import { MobileDialog } from "./components/MobileDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { UsageStatsPrompt } from "./components/UsageStats";
 import { Sidebar } from "./components/Sidebar";
@@ -263,6 +264,7 @@ function Dialogs() {
       {dialog === "adopt-project" && <AdoptProjectDialog />}
       {dialog === "settings" && <SettingsDialog />}
       {dialog === "search" && <SearchDialog />}
+      {dialog === "mobile" && <MobileDialog />}
       {dialog === "connect-apps" && <ConnectApps />}
       {typeof dialog === "object" && dialog?.kind === "connect-apps" && <ConnectApps initialUrl={dialog.url} />}
       {typeof dialog === "object" && dialog?.kind === "rename-bot" && <RenameBotDialog slug={dialog.slug} />}

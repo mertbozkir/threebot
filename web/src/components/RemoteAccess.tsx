@@ -19,7 +19,7 @@ function Link({ href, children }: { href: string; children: React.ReactNode }) {
   return <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1 rounded-full bg-hover px-3 py-1.5 text-[13px] hover:bg-active">{children}<ExternalLink size={13} aria-hidden="true" /></a>;
 }
 
-function Address({ url }: { url: string }) {
+export function Address({ url }: { url: string }) {
   return <span className="mt-1 flex min-w-0 items-center gap-1.5">
     <a href={url} target="_blank" rel="noopener noreferrer" className="min-w-0 truncate text-accent underline-offset-2 hover:underline">{url}</a>
     <IconButton type="button" onClick={() => void copy(url)} aria-label="Copy link" title="Copy link" className="size-7 shrink-0"><Copy size={14} /></IconButton>
