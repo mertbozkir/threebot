@@ -38,9 +38,9 @@ export function Pill({ variant = "primary", className, children, ...rest }: Butt
       type="button"
       {...rest}
       className={clsx(
-        "inline-flex h-8 items-center justify-center gap-1.5 rounded-full px-3.5 text-[13px] font-medium transition-[opacity,background] disabled:cursor-default disabled:opacity-40",
+        "inline-flex h-[34px] shrink-0 items-center justify-center gap-1.5 rounded-full px-4 text-[14px] font-medium transition-[opacity,background] disabled:cursor-default disabled:opacity-40",
         variant === "primary" && "bg-pill text-pill-fg hover:opacity-90",
-        variant === "soft" && "bg-pill-soft text-fg hover:bg-active",
+        variant === "soft" && "border border-line bg-card text-fg hover:bg-hover",
         variant === "ghost" && "text-fg hover:bg-hover",
         variant === "danger" && "bg-danger text-white hover:opacity-90",
         className,
@@ -66,9 +66,9 @@ export function Switch({ checked, onChange, label, labelledBy, describedBy, busy
         e.stopPropagation();
         onChange(!checked);
       }}
-      className={clsx("switch relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors", checked ? "bg-pill" : "bg-active")}
+      className={clsx("switch relative h-6 w-10 shrink-0 rounded-full transition-colors duration-150", checked ? "bg-[var(--switch-on)]" : "bg-active")}
     >
-      <span className={clsx("absolute top-[3px] left-0 size-4 rounded-full shadow transition-transform", checked ? "translate-x-[19px] bg-pill-fg" : "translate-x-[3px] bg-white")} />
+      <span className={clsx("absolute top-[3px] left-0 size-[18px] rounded-full bg-white shadow-sm transition-transform duration-150", checked ? "translate-x-[19px]" : "translate-x-[3px]")} />
     </button>
   );
 }
