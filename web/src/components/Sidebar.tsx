@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import clsx from "clsx";
-import { Archive, ArrowLeftRight, Bot as BotIcon, FolderKanban, CircleCheck, ArrowUp, ArrowDown, RotateCcw, Check, ChevronDown, ChevronRight, ChevronUp, CloudDownload, Copy, Ellipsis, EyeOff, Eye, Folder, FolderInput, FolderPlus, Gauge, Grid2x2Plus, LayoutGrid, ListChecks, LogOut, MailOpen, Paperclip, Pencil, Pin, PinOff, Plus, Search, Send, Settings as SettingsIcon, Star, Trash2, Users } from "lucide-react";
+import { Archive, ArrowLeftRight, Bot as BotIcon, FolderKanban, CircleCheck, ArrowUp, ArrowDown, RotateCcw, Check, ChevronDown, ChevronRight, ChevronUp, CloudDownload, Copy, Ellipsis, EyeOff, Eye, Folder, FolderInput, FolderPlus, Gauge, Grid2x2Plus, LayoutGrid, ListChecks, LogOut, MailOpen, Paperclip, Pencil, Pin, PinOff, Plus, Search, Send, Settings as SettingsIcon, Smartphone, Star, Trash2, Users } from "lucide-react";
 import { ActivityAvatar } from "./ActivityAvatar";
 import { Menu, Modal, Pill, RoundButton, type MenuItem } from "./ui";
 import { useUsagePeak } from "./UsagePanel";
@@ -438,6 +438,7 @@ function AccountMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
       y={y}
       onClose={onClose}
       items={[
+        { label: "Get Threebot for mobile", icon: <Smartphone size={14} />, onSelect: () => openDialog("mobile") },
         { label: "Usage", icon: <Gauge size={14} />, detail: usagePeak === null ? undefined : `${usagePeak}% used`, chevron: true, onSelect: () => { useApp.setState({ settingsPane: "usage" }); openDialog("settings"); } },
         { label: "Settings", icon: <SettingsIcon size={14} />, onSelect: () => openDialog("settings") },
         "divider",

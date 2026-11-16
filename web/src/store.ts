@@ -22,7 +22,7 @@ export type ThreadData = {
 };
 
 export type MainBotIntent = { kind: "replace" } | { kind: "hide"; slug: string } | { kind: "delete"; slug: string };
-export type Dialog = null | "new-bot" | "settings" | "search" | "connect-apps" | { kind: "connect-apps"; url: string } | { kind: "delete-bot"; slug: string } | "adopt-project" | { kind: "rename-bot"; slug: string } | { kind: "computer"; slug: string } | { kind: "main-bot"; intent: MainBotIntent; initialSlug?: string } | { kind: "room"; id?: string };
+export type Dialog = null | "new-bot" | "settings" | "search" | "connect-apps" | { kind: "connect-apps"; url: string } | { kind: "delete-bot"; slug: string } | "adopt-project" | { kind: "rename-bot"; slug: string } | { kind: "computer"; slug: string } | { kind: "main-bot"; intent: MainBotIntent; initialSlug?: string } | { kind: "room"; id?: string } | "mobile";
 
 export type SearchFilter = "All" | "Messages" | "Bots" | "Rooms" | "Routines" | "Files" | "Apps";
 export type SearchSession = { query: string; filter: SearchFilter; index: number; scrollTop: number };
