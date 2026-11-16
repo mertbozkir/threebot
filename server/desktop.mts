@@ -281,7 +281,8 @@ const PROBE_SCRIPT = 'printf "%s\\n" "$HOME"; id -u; mkdir -p "$HOME/.threebot-d
 export function sshDockerRuntime({ host, controlPath }: { host: string; controlPath: string }): DesktopRuntime {
   let home: string | null = null;
   const opts = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=3", "-o", "ControlMaster=auto", "-o", `ControlPath=${controlPath}`, "-o", "ControlPersist=10m"];
-  const sshLine = (remote: string[]) => ["ssh", ...opts, host, "--", ...remote];
+  // spawnRun supplies the `ssh` binary itself (cli below), so the line starts at its options.
+  const sshLine = (remote: string[]) => [...opts, host, "--", ...remote];
   const command = (args: string[]) => sshLine(["docker", ...args.map(shellQuote)]);
   const vncDir = () => {
     if (!home) throw new Error("The computer hasn't probed the host yet.");
@@ -315,7 +316,7 @@ export function sshDockerRuntime({ host, controlPath }: { host: string; controlP
         "--memory", `${memoryMb}m`, "--cpus", "2",
         "-v", `${HOME_VOLUME}:/home/bot`, "-v", `${WORKSPACE_VOLUME}:/workspace`,
         "-v", `${vncDir()}:/tmp/vnc`,
-        "--cap-add", "NET_ADMIN", "--security-opt", "no-new-privileges", "--sysctl", "net.ipv6.conf.all.disable_ipv6=1",
+        "--hostname", CONTAINER_NAME, "--cap-add", "NET_ADMIN", "--security-opt", "no-new-privileges", "--sysctl", "net.ipv6.conf.all.disable_ipv6=1",
         image,
       ];
     },

@@ -345,7 +345,7 @@ test("shellQuote always quotes and escapes single quotes", () => {
 
 test("the ssh runtime wraps every docker verb in one ssh line with each argument quoted", () => {
   const rt = sshDockerRuntime({ host: "box", controlPath: "/run/cm-%r" });
-  const prefix = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=3", "-o", "ControlMaster=auto", "-o", "ControlPath=/run/cm-%r", "-o", "ControlPersist=10m", "box", "--"];
+  const prefix = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=3", "-o", "ControlMaster=auto", "-o", "ControlPath=/run/cm-%r", "-o", "ControlPersist=10m", "box", "--"];
   assert.deepEqual(rt.command(["info"]), [...prefix, "docker", "'info'"]);
   assert.deepEqual(rt.command(["rm", "-f", "threebot-desktop"]), [...prefix, "docker", "'rm'", "'-f'", "'threebot-desktop'"]);
   assert.deepEqual(rt.command(["exec", "-u", "bot", "threebot-desktop", "xdotool", "type", "--", "a b"]), [...prefix, "docker", "'exec'", "'-u'", "'bot'", "'threebot-desktop'", "'xdotool'", "'type'", "'--'", "'a b'"]);
@@ -412,7 +412,7 @@ function fakeSshHost(png: Buffer) {
     const remote = args.slice(args.indexOf("--") + 1);
     calls.push({ args, options, remote });
     if (down) return { code: 255, stdout: Buffer.alloc(0), stderr: "ssh: connect to host box port 22: Connection refused" };
-    if (args[0] !== "ssh") throw new Error(`expected an ssh line, got: ${args[0]}`);
+    if (args[0] !== "-o") throw new Error(`expected ssh options first (spawnRun adds the binary), got: ${args[0]}`);
     const ok = (stdout: Buffer | string = "") => ({ code: 0, stdout: Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout), stderr: "" });
     if (remote[0] === "'sh'") return ok("/home/u\n1000\n");
     if (remote[0] === "docker") {
