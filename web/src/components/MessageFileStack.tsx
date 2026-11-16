@@ -44,7 +44,7 @@ function AudioFileCard({ link }: { link: MessageFileLink }) {
     if (audio.current) audio.current.playbackRate = next;
   };
   return (
-    <div className="relative h-[120px] w-[355px] min-w-0 max-w-full rounded-[18px] border-[0.5px] border-file-card-border bg-file-card-bg pt-[15.5px] pr-6 pl-[15.5px]">
+    <div className="relative h-[120px] w-[355px] min-w-0 max-w-full rounded-[18px] border-[0.5px] border-file-card-border bg-file-card-bg pt-[15px] pr-6 pl-[15.5px]">
       <div className="flex items-center gap-[10px]">
         <FileGlyph kind="audio" />
         <span className="min-w-0">
@@ -55,9 +55,9 @@ function AudioFileCard({ link }: { link: MessageFileLink }) {
       <div className="absolute right-[12.5px] bottom-2 left-[8.5px] flex h-8 items-center gap-[11px] text-muted">
         <span className="flex h-full shrink-0 items-center overflow-hidden rounded-full bg-file-card-pill">
           <button type="button" onClick={toggle} aria-label={playing ? "Pause" : "Play"} className="grid h-full w-[34px] place-items-center">
-            {playing ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" className="ml-0.5" />}
+            {playing ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" className="ml-0.5" />}
           </button>
-          <button type="button" onClick={cycleRate} aria-label="Playback speed" title="Playback speed" className="h-full w-[34px] border-l border-file-card-bg text-[13px] tabular-nums">{rate}×</button>
+          <button type="button" onClick={cycleRate} aria-label="Playback speed" title="Playback speed" className="h-full w-[34px] border-l-[0.5px] border-file-card-bg text-[13px] tabular-nums">{rate}×</button>
         </span>
         <span className="flex min-w-0 flex-1 items-center gap-[3px] overflow-hidden" aria-hidden="true">
           {bars.map((height, index) => (
