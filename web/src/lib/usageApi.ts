@@ -71,7 +71,7 @@ export const formatTokens = (n: number) => {
   return `${Math.round(n)}`;
 };
 
-export type UsageSeries = { key: string; name: string; inp: number[]; out: number[]; totalIn: number; totalOut: number };
+export type UsageSeries = { key: string; name: string; inp: number[]; out: number[]; totalIn: number; totalOut: number; color?: string };
 
 /** Rows as at most four series (largest first by in+out, the rest folded into "Other"), with per-day arrays aligned to `days`. */
 export function groupUsage(rows: readonly UsageRow[], by: "bot" | "source" | "model", names: Record<string, string> = {}, days: readonly string[] = []): UsageSeries[] {

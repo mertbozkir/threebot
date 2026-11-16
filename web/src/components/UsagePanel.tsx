@@ -4,6 +4,7 @@ import { parseProviderUsage, peakUsage, resetsIn, limitGroups, groupUsage, total
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { Pill, Spinner } from "./ui";
 import { useApp } from "../store";
+import { botColor } from "../lib/character";
 
 /** The most-used limit across providers, for the Settings row. */
 export function useUsagePeak() {
@@ -15,7 +16,17 @@ export function useUsagePeak() {
 const dayFmt = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" });
 const fmtDay = (day: string) => dayFmt.format(new Date(`${day}T00:00:00Z`));
 const sourceNames = { you: "You", routine: "Routines", bot: "Other Bots" };
-const seriesColor = (series: UsageSeries, index: number) => series.key === "other" ? "var(--fg-faint)" : `var(--usage-s${(index % 4) + 1})`;
+const seriesColor = (series: UsageSeries, index: number) => series.color ?? (series.key === "other" ? "var(--fg-faint)" : `var(--usage-s${(index % 4) + 1})`);
+/** By Bot, each series wears its Bot's own colour; a colour already taken falls back to the palette so two Bots never look alike. */
+function withBotColors(series: UsageSeries[], bots: Record<string, { color?: string }>): UsageSeries[] {
+  const taken = new Set<string>();
+  return series.map((s) => {
+    const color = s.key === "other" ? undefined : bots[s.key] ? botColor(bots[s.key].color) : undefined;
+    if (!color || taken.has(color)) return s;
+    taken.add(color);
+    return { ...s, color };
+  });
+}
 
 function Segmented({ label, value, options, onChange }: { label: string; value: string; options: readonly (readonly [string, string])[]; onChange: (value: string) => void }) {
   return <div className="usage-seg" role="group" aria-label={label}>
@@ -97,7 +108,7 @@ export function UsagePanel() {
     if (by === "bot") return Object.fromEntries(Object.values(bots).map((bot) => [bot.slug, bot.name]));
     return {};
   }, [by, bots]);
-  const series = useMemo(() => usage ? groupUsage(usage.rows, by, names, usage.days) : [], [usage, by, names]);
+  const series = useMemo(() => { const grouped = usage ? groupUsage(usage.rows, by, names, usage.days) : []; return by === "bot" ? withBotColors(grouped, bots) : grouped; }, [usage, by, names, bots]);
   const days = usage?.days ?? [];
   const allIn = series.reduce((sum, s) => sum + s.totalIn, 0), allOut = series.reduce((sum, s) => sum + s.totalOut, 0);
   const allTokens = usage?.rows.reduce((sum, row) => sum + totalIn(row) + row.output, 0) ?? 0;
