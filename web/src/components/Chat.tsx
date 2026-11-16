@@ -9,8 +9,9 @@ import { BotExchange } from "./BotExchange";
 import { ApprovalCard, AutomatedCard, DateSep, ErrorLine, EventLine, FileCard, PageCard, QuestionCard, SecretCard, SubagentCard, ToolImage, useBotsByThread } from "./Cards";
 import { WorkspaceFileContext, WorkspaceMessageImage, WorkspaceResourceViewer } from "./WorkspaceResource";
 import { workspaceFilePath, workspaceLinkPath } from "../lib/workspaceLinks";
-import { fileCardAccent, fileTypeLabel, soloFileLinkParagraph, aboutFilePrompt } from "../lib/fileCards";
+import { fileGlyphKind, fileTypeLabel, soloFileLinkParagraph, aboutFilePrompt } from "../lib/fileCards";
 import { FileCard as DocumentCard } from "./FileCard";
+import { MessageFileStack } from "./MessageFileStack";
 import { RichMarkdown } from "./RichMarkdown";
 import { BoardItemChip } from "./Projects";
 import { parseItemLink } from "../lib/projects";
@@ -321,6 +322,7 @@ export function BotBubble({ text, threadId, itemId, runId, onReply }: { text: st
               <MessageContent text={p} />
             </div>
           ))}
+          <MessageFileStack text={text} />
         </div>
       </MessageImages>
     </ChatMessageActions>
@@ -342,7 +344,7 @@ function MessageParagraph({ node, children }: ComponentPropsWithoutRef<"p"> & Ex
   const solo = workspace && node ? soloFileLinkParagraph(node, (href) => workspaceLinkPath(href, workspace.workspaceRoot, workspace.fromPath)) : null;
   if (!solo || !workspace) return <p>{children}</p>;
   const name = solo.text.trim() || solo.path.split("/").at(-1) || solo.path;
-  return <DocumentCard name={name} detail={fileTypeLabel(solo.path)} accent={fileCardAccent(solo.path)} onOpen={() => workspace.openFile(solo.path)} />;
+  return <DocumentCard name={name} detail={fileTypeLabel(solo.path)} kind={fileGlyphKind(solo.path)} onOpen={() => workspace.openFile(solo.path)} />;
 }
 
 /** Links to the user's Executor (sign-in links Bots post) render as Connect cards. */
