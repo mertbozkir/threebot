@@ -87,6 +87,20 @@ export function turnsFromProjection(projection: UsageProjection | null | undefin
   return entries;
 }
 
+/**
+ * The scan watermark after a pass. Threads count oldest first, and the mark only moves past a thread once it
+ * and every older one were read, so a failed, skipped or over-budget thread is read again on the next pass.
+ */
+export function nextScanWatermark(previous: number, results: readonly { updatedAt: number; read: boolean }[]): number {
+  let mark = previous;
+  for (const result of [...results].sort((a, b) => a.updatedAt - b.updatedAt)) {
+    // Stay below the unread thread: the next pass picks threads updated after the mark.
+    if (!result.read) return Math.max(previous, Math.min(mark, result.updatedAt - 1));
+    if (result.updatedAt > mark) mark = result.updatedAt;
+  }
+  return mark;
+}
+
 const validEntry = (value: unknown): value is UsageEntry => {
   if (!value || typeof value !== "object") return false;
   const e = value as UsageEntry;

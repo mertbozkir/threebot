@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { accountsFromBuckets, createUsageLedger, providerForSourcePath, turnsFromProjection, usageDays, type UsageEntry, type UsageProjection } from "./bot-usage.mts";
+import { accountsFromBuckets, createUsageLedger, nextScanWatermark, providerForSourcePath, turnsFromProjection, usageDays, type UsageEntry, type UsageProjection } from "./bot-usage.mts";
 
 const NOW = Date.parse("2026-11-16T12:00:00Z");
 const tokens = { inputTokens: 10, cachedInputTokens: 2, cacheCreationTokens: 1, outputTokens: 5, models: ["model-a"] };
@@ -183,4 +183,13 @@ test("usage-summary buckets become per-account totals without their paths", () =
   ]);
   assert.ok(!JSON.stringify(accounts).includes("sourcePath") && !JSON.stringify(accounts).includes("/home/u"));
   assert.deepEqual(accountsFromBuckets(null), []);
+});
+
+test("the scan watermark stops below the oldest thread a pass didn't read", () => {
+  assert.equal(nextScanWatermark(100, [{ updatedAt: 300, read: true }, { updatedAt: 200, read: true }]), 300);
+  // A newer thread read fine must not carry the mark past an older one that failed or was over the cap.
+  assert.equal(nextScanWatermark(100, [{ updatedAt: 300, read: true }, { updatedAt: 200, read: false }, { updatedAt: 150, read: true }]), 150);
+  assert.equal(nextScanWatermark(100, [{ updatedAt: 200, read: true }, { updatedAt: 200, read: false }]), 199);
+  assert.equal(nextScanWatermark(100, [{ updatedAt: 101, read: false }]), 100);
+  assert.equal(nextScanWatermark(100, []), 100);
 });

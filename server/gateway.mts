@@ -59,7 +59,7 @@ import { BETA_DEFAULTS, betaSettings, patchBeta, settleBetaDefaults } from "./be
 import { computerSetting, createDesktop, createDesktopTools, createRfbClientFilter, DESKTOP_TOOLS, pasteText, sshDockerRuntime, type ComputerSetting, type ComputerStatus } from "./desktop.mts";
 import net from "node:net";
 import { aggregateTurnUsage, createTelemetry, MIN_T3_FOR_TOKENS, versionAtLeast, type PayloadInput } from "./telemetry.mts";
-import { accountsFromBuckets, createUsageLedger, turnsFromProjection, usageDays, type UsageEntry } from "./bot-usage.mts";
+import { accountsFromBuckets, createUsageLedger, nextScanWatermark, turnsFromProjection, usageDays, type UsageEntry } from "./bot-usage.mts";
 import { AVATAR_BODY_LIMIT, avatarImagePatch, decodeAvatarImage, storeAvatarImage, readAvatarImage } from "./avatar-images.mts";
 
 /** What route handlers and helpers throw: an Error, optionally with the HTTP status and a code to show. */
@@ -343,6 +343,8 @@ const usageLedger = createUsageLedger({ file: path.join(appDir, "usage", "ledger
 let usagePassAt = 0;
 let usageScannedAt = 0;
 let usagePassRunning = false;
+/** Failed projection reads per thread: after three, the thread stops holding the watermark back (it may be gone). */
+const usageReadFailures = new Map<string, number>();
 /** Records the finished provider turns of Bot threads changed since the last pass. Never throws. */
 async function refreshUsageLedger() {
   if (usagePassRunning) return;
@@ -358,21 +360,30 @@ async function refreshUsageLedger() {
       const { timezone } = await getSettings();
       const timeZone = timezone?.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone;
       const entries: UsageEntry[] = [];
-      // One pass reads at most 200 threads and gives up on the clock, like the usage-stats collector.
+      // One pass reads at most 200 threads, oldest first, and gives up on the clock, like the usage-stats collector.
+      // Threads it doesn't read (failed, over the cap or the clock) hold the watermark back, so the next pass reads them.
       const deadline = started + 60_000;
-      let scanned = usageScannedAt;
-      for (const thread of botThreads(recent, bots).slice(0, 200)) {
-        if (Date.now() > deadline) break;
-        // A thread whose read failed keeps its stamp, so the next pass tries it again.
+      const stamp = (thread: { updatedAt?: string | null }) => Date.parse(thread.updatedAt ?? "") || started;
+      const candidates = botThreads(recent, bots).sort((a, b) => stamp(a) - stamp(b));
+      const results: { updatedAt: number; read: boolean }[] = [];
+      for (const [index, thread] of candidates.entries()) {
+        const updatedAt = stamp(thread);
+        if (index >= 200 || Date.now() > deadline) { results.push({ updatedAt, read: false }); continue; }
         const projection = await withTimeout(t3rpc(), 10000, "T3 timed out").then((client) => withTimeout(client.call("orchestration.getThreadProjection", { threadId: thread.id }), 15000, "T3 timed out")).catch(() => null);
-        if (!projection) continue;
-        const updatedAt = Date.parse(thread.updatedAt ?? "") || 0;
-        if (updatedAt > scanned) scanned = updatedAt;
+        if (!projection) {
+          const failures = (usageReadFailures.get(thread.id) ?? 0) + 1;
+          usageReadFailures.set(thread.id, failures);
+          results.push({ updatedAt, read: failures >= 3 });
+          if (failures >= 3) usageReadFailures.delete(thread.id);
+          continue;
+        }
+        usageReadFailures.delete(thread.id);
+        results.push({ updatedAt, read: true });
         const bot = slugOfMain.get(thread.id) ?? slugOfMain.get(thread.lineage?.rootThreadId ?? "") ?? slugOfMain.get(thread.lineage?.parentThreadId ?? "") ?? slugOfProject.get(thread.projectId ?? "") ?? "unknown";
         entries.push(...turnsFromProjection(projection as Parameters<typeof turnsFromProjection>[0], { bot, timeZone }));
       }
       if (entries.length) { await usageLedger.add(entries); await usageLedger.save(); }
-      usageScannedAt = scanned;
+      usageScannedAt = nextScanWatermark(usageScannedAt, results);
     }
     usagePassAt = Date.now();
   } catch (error) {
@@ -1356,13 +1367,15 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/telemetry/preview" && req.method === "GET") return send(res, 200, await telemetry.preview(), { "cache-control": "no-store" });
     if (p === "/api/telemetry/reset-id" && req.method === "POST") return send(res, 200, await telemetry.resetId());
     if (p === "/api/usage/bots" || p === "/api/usage/accounts") {
+      if (req.method !== "GET") return send(res, 405, { error: "method not allowed" });
       const days = Number(url.searchParams.get("days") ?? 7);
       if (days !== 7 && days !== 30) return send(res, 400, { error: "days must be 7 or 30" });
       const { timezone } = await getSettings();
       const timeZone = timezone?.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone;
       if (p === "/api/usage/bots") {
-        // A pass older than two minutes may have missed recent turns; one bounded refresh, then answer.
-        if (Date.now() - usagePassAt > 120_000) await refreshUsageLedger();
+        // A pass older than two minutes may have missed recent turns. A full pass can take over a minute, so
+        // wait at most 5 s for it and answer from the ledger as it stands; the pass keeps running and saves.
+        if (Date.now() - usagePassAt > 120_000) await Promise.race([refreshUsageLedger(), new Promise((resolve) => setTimeout(resolve, 5000).unref())]);
         return send(res, 200, await usageLedger.rows({ days, timeZone }), { "cache-control": "no-store" });
       }
       const { since, until } = usageDays(days, timeZone);
@@ -1370,7 +1383,9 @@ const server = http.createServer(async (req, res) => {
         const summary = await withTimeout((await withTimeout(t3rpc(), 10000, "T3 timed out")).call("server.getUsageSummary", { sinceDay: since, untilDay: until, timeZone, provisional: true }), 15000, "T3 timed out") as { buckets?: unknown } | null;
         return send(res, 200, { since, until, timeZone, accounts: accountsFromBuckets(summary?.buckets) }, { "cache-control": "no-store" });
       } catch (error) {
-        return send(res, 502, { error: `Usage summary unavailable: ${String((error as Error).message ?? error).slice(0, 120)}` });
+        // T3's error text can carry local paths; keep it in the log, not the response.
+        console.log(`usage accounts: ${String((error as Error)?.message ?? error)}`.slice(0, 200));
+        return send(res, 502, { error: "Usage summary unavailable. Try again in a moment." });
       }
     }
     if (p === "/api/voice/cloud" && req.method === "GET") return send(res, 200, await cloudTranscription.status(), { "cache-control": "no-store" });
