@@ -734,10 +734,17 @@ test("Vault repeated phones and emails make primary, remove and save ordered val
   assert.deepEqual(saved.emails,["second@example.invalid","first@example.invalid"]); assert.equal(saved.email,"second@example.invalid");
 });
 
-test("Beta: the Computer's Runs on choice and SSH host save through settings", async () => {
+test("Computer pane (beta on): the Runs on choice and SSH host save through settings", async () => {
   settings.beta = { projects: false, desktop: true };
-  useApp.setState({ settingsPane: "beta", settings }); await render();
+  handleRequest = async (url, init) => {
+    if (url === "/api/settings") { if (init.method === "PUT") settings = { ...settings, ...JSON.parse(init.body) }; return Response.json(settings); }
+    if (url.startsWith("/api/computer")) return Response.json({ where: "mac", state: "stopped", reason: null, runtime: null, image: { current: "img-7", running: "img-7", builtAt: null, latest: true } });
+    if (url.startsWith("/api/machines")) return Response.json({ machines: [{ environmentId: "local", label: "Test computer", local: true, status: "online", lastSeenAt: null, t3Version: "1.2.3", threebotVersion: "0.1.9", laptop: true, route: "local", paired: false, lastError: null }], linksSupported: true });
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  useApp.setState({ settingsPane: "computer", settings, machines: null }); await render();
   assert.equal(labeled<HTMLSelectElement>("Runs on").value, "mac");
+  assert.match(document.body.textContent, /Bot's computer · Sleeping/);
   await select("Runs on", "ssh");
   const host = labeled<HTMLInputElement>("SSH host");
   assert.equal(host.placeholder, "a host from your ~/.ssh/config");
@@ -753,6 +760,8 @@ test("Beta: the Computer's Runs on choice and SSH host save through settings", a
   assert.deepEqual(settings.computer, { where: "ssh", host: "build-box" });
   handleRequest = async (url, init) => {
     if (url === "/api/settings") { if (init.method === "PUT") settings = { ...settings, ...JSON.parse(init.body) }; return Response.json(settings); }
+    if (url.startsWith("/api/computer")) return Response.json({ where: "mac", state: "stopped", reason: null, runtime: null, image: { current: "img-7", running: "img-7", builtAt: null, latest: true } });
+    if (url.startsWith("/api/machines")) return Response.json({ machines: [], linksSupported: true });
     throw new Error(`Unexpected request: ${url}`);
   };
   await select("Runs on", "mac");

@@ -43,6 +43,15 @@ export type CodingMachine = { environmentId: string; label: string };
 export type CodingWork = { preferred: CodingMachine | null; fallback: CodingMachine | null };
 /** Settings → Beta → Computer → Runs on: this Mac, or a Docker host reached over the person's own SSH access. */
 export type ComputerSetting = { where: "mac" } | { where: "ssh"; host: string };
+/** GET /api/computer: the Bots' shared computer, its connection and image version. */
+export type ComputerStatus = {
+  where: "mac" | "ssh";
+  host?: string;
+  state: "off" | "unavailable" | "building" | "stopped" | "starting" | "healthy" | "stopping" | "failed";
+  reason: string | null;
+  runtime: string | null;
+  image: { current: string; running: string | null; builtAt: string | null; latest: boolean };
+};
 
 /** The roster line for a conversation, which T3's shell stream leaves empty. */
 export type ThreadPreview = { kind: "text" | "attachment" | "question" | "sent"; role: "user" | "assistant"; text: string; at: string | null };
