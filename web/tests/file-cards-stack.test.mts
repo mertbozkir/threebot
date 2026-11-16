@@ -25,16 +25,20 @@ test("message file links dedupe by path and skip external links and code", () =>
   assert.deepEqual(messageFileLinks("No files here.", resolve), []);
 });
 
-test("paragraph-only links are excluded from the stack, other positions are kept", () => {
-  const text = "[report.pdf](library/report.pdf)\n\nAlso see [data.xlsx](library/data.xlsx) inline.";
-  const solo = new Set(
-    text.split("\n\n").flatMap((part) => soloMarkdownLink(part, resolve)?.path ?? []),
-  );
-  const stacked = messageFileLinks(text, resolve).filter((link) => !solo.has(link.path));
-  assert.deepEqual(stacked.map((link) => link.path), ["library/data.xlsx"]);
+test("a long message lists each linked file once, whether it sits on its own line or inline", () => {
+  const solo = Array.from({ length: 20 }, (_, index) => `[file-${index}.png](library/file-${index}.png)`).join("\n\n");
+  const text = `${"Long intro. ".repeat(100)}\n\n${solo}\n\nAlso see [file-3.png](library/file-3.png) and [data.xlsx](library/data.xlsx).`;
+  const paths = messageFileLinks(text, resolve).map((link) => link.path);
+  assert.equal(paths.length, 21);
+  assert.equal(new Set(paths).size, 21);
+  assert.equal(paths.at(-1), "library/data.xlsx");
+});
+
+test("solo link detection accepts a lone workspace link and nothing else", () => {
   assert.match(String(soloMarkdownLink("  [deck.pptx](library/deck.pptx)  ", resolve)?.path), /deck\.pptx/);
   assert.equal(soloMarkdownLink("See [deck.pptx](library/deck.pptx) here", resolve), null);
   assert.equal(soloMarkdownLink("[outside.pdf](../elsewhere/outside.pdf)", resolve), null);
+  assert.equal(soloMarkdownLink("[web.pdf](https://example.com/web.pdf)", resolve), null);
 });
 
 test("the stack caps at twenty-four cards and expands on demand", () => {

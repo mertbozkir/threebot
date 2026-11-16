@@ -36,6 +36,9 @@
   --file-card-tile: #d6d6d3;
   --file-card-line: #a9a9a6;
   --file-card-grid: #bfbfbc;
+  --file-card-tile-edge: rgb(19 17 34 / 0.08);
+  --file-card-wave: #cfcfcc;
+  --file-card-pill: rgb(19 17 34 / 0.06);
   color-scheme: light;
 }
 
@@ -70,7 +73,10 @@
   --file-card-border: #2e2e2e;
   --file-card-tile: #343434;
   --file-card-line: #626262;
-  --file-card-grid: #4a4a4a;
+  --file-card-grid: #535353;
+  --file-card-tile-edge: #464646;
+  --file-card-wave: #363636;
+  --file-card-pill: #393939;
   color-scheme: dark;
 }
 
@@ -107,6 +113,9 @@
   --color-file-card-tile: var(--file-card-tile);
   --color-file-card-line: var(--file-card-line);
   --color-file-card-grid: var(--file-card-grid);
+  --color-file-card-tile-edge: var(--file-card-tile-edge);
+  --color-file-card-wave: var(--file-card-wave);
+  --color-file-card-pill: var(--file-card-pill);
 }
 
 html,

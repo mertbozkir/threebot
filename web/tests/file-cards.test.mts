@@ -19,7 +19,7 @@ test("file card accents map file types to their band colors", () => {
 });
 
 test("sizes format compactly as B, kB and MB", () => {
-  for (const [bytes, label] of [[null, null], [0, "0B"], [21, "21B"], [512, "512B"], [1023, "1023B"], [1024, "1kB"], [1946, "1.9kB"], [36864, "36kB"], [1_048_576, "1MB"], [1_258_291, "1.2MB"], [1_572_864, "1.5MB"], [1_610_612_736, "1.5GB"]] as const) {
+  for (const [bytes, label] of [[null, null], [0, "0B"], [21, "21B"], [512, "512B"], [1023, "1023B"], [1024, "1kB"], [1946, "1.9kB"], [16_589, "16kB"], [36864, "36kB"], [1_048_576, "1MB"], [1_258_291, "1.2MB"], [1_572_864, "1.5MB"], [1_610_612_736, "1.5GB"]] as const) {
     assert.equal(formatSize(bytes), label, String(bytes));
   }
 });

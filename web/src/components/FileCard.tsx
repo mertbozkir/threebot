@@ -4,100 +4,43 @@ import { workspaceAssetUrl } from "../lib/workspaceAssets";
 import { workspaceClient } from "../lib/workspaceTransport";
 import { WorkspaceFileContext } from "./WorkspaceResource";
 
-const BANDS: Partial<Record<FileGlyphKind, { color: string; height: string }>> = {
-  pdf: { color: FILE_CARD_COLORS.pdf, height: "28%" },
-  sheet: { color: FILE_CARD_COLORS.sheet, height: "31%" },
-  doc: { color: FILE_CARD_COLORS.doc, height: "31%" },
-  slides: { color: FILE_CARD_COLORS.slides, height: "35%" },
+type Mark = readonly [x: number, y: number, width: number, height: number, radius: number];
+
+/** A 4px bar on the 7px rhythm all tiles share. */
+const bar = (y: number, width: number, x = 4.5): Mark => [x, y, width, 4, 2];
+const dot = (x: number, y: number): Mark => [x, y, 4, 4, 2];
+const TEXT: readonly Mark[] = [bar(4.5, 11), bar(11.5, 24), bar(18.5, 24), bar(25.5, 11)];
+
+/** Tile contents in CSS pixels, measured from the outer edge of a 33x41 tile (41x35 for slides). */
+const GLYPHS: Record<FileGlyphKind, { marks?: readonly Mark[]; fill?: string; grid?: string; band?: { color: string; top: number } }> = {
+  pdf: { marks: [bar(4.5, 24), bar(11.5, 11), bar(18.5, 11), [17.5, 11.5, 11, 11, 1.5]], band: { color: FILE_CARD_COLORS.pdf, top: 28.5 } },
+  doc: { marks: [bar(4.5, 24), bar(11.5, 24), bar(18.5, 11)], band: { color: FILE_CARD_COLORS.doc, top: 28.5 } },
+  sheet: { grid: "M10.75 0V28.5M21.75 0V28.5M0 6.25H33M0 11.75H33M0 17.75H33M0 23.25H33", band: { color: FILE_CARD_COLORS.sheet, top: 28.5 } },
+  slides: { marks: [bar(4.5, 31.5), bar(11.5, 14.5)], band: { color: FILE_CARD_COLORS.slides, top: 22.5 } },
+  json: { marks: [dot(4.5, 4.5), dot(8.5, 11.5), bar(11.5, 14, 14.5), dot(8.5, 18.5), bar(18.5, 14, 14.5), dot(4.5, 25.5)] },
+  text: { marks: TEXT },
+  other: { marks: TEXT },
+  // Zipper teeth hang off a center line at x=16.5, alternating right and left every 4px.
+  archive: { fill: [0.5, 4.5, 8.5, 12.5, 16.5, 20.5].map((y, index) => `M16.5 ${y}h${index % 2 ? -6 : 6}a2 2 0 0 ${index % 2 ? 0 : 1} 0 4h${index % 2 ? 6 : -6}z`).join("") },
+  audio: { marks: [[7.5, 12.5, 4, 16, 2], [14.5, 8.5, 4, 24, 2], [21.5, 12.5, 4, 16, 2]] },
 };
 
-function Lines({ widths, height, viewBox }: { widths: number[]; height: number; viewBox: string }) {
-  return (
-    <svg className="absolute inset-0 h-full w-full" viewBox={viewBox} aria-hidden="true">
-      <g className="fill-file-card-line">
-        {widths.map((width, index) => (
-          <rect key={index} x="5" y={4 + index * 8} width={width} height="3" rx="1.5" />
-        ))}
-      </g>
-    </svg>
-  );
-}
-
-function GlyphBody({ kind }: { kind: FileGlyphKind }) {
-  switch (kind) {
-    case "pdf":
-      return (
-        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 33 39" aria-hidden="true">
-          <g className="fill-file-card-line">
-            <rect x="5" y="4" width="23" height="3" rx="1.5" />
-            <rect x="5" y="11" width="9" height="3" rx="1.5" />
-            <rect x="5" y="18" width="9" height="3" rx="1.5" />
-            <rect x="17.5" y="11" width="11" height="10" rx="2" />
-          </g>
-        </svg>
-      );
-    case "sheet":
-      return (
-        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 33 39" aria-hidden="true">
-          <g className="stroke-file-card-grid" strokeWidth="1" fill="none">
-            <path d="M11 0V27M22 0V27M0 6.75H33M0 13.5H33M0 20.25H33" />
-          </g>
-        </svg>
-      );
-    case "doc":
-      return <Lines widths={[23, 23, 10.5]} height={39} viewBox="0 0 33 39" />;
-    case "slides":
-      return <Lines widths={[31, 15.5]} height={35} viewBox="0 0 41 35" />;
-    case "json":
-      return (
-        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 33 39" aria-hidden="true">
-          <g className="fill-file-card-line">
-            <circle cx="6.5" cy="5.5" r="1.5" />
-            <circle cx="12.5" cy="13.5" r="1.5" />
-            <rect x="16" y="12" width="12" height="3" rx="1.5" />
-            <circle cx="12.5" cy="21.5" r="1.5" />
-            <rect x="16" y="20" width="12" height="3" rx="1.5" />
-            <circle cx="6.5" cy="33.5" r="1.5" />
-          </g>
-        </svg>
-      );
-    case "text":
-    case "other":
-      return <Lines widths={[10.5, 23, 23, 10.5]} height={39} viewBox="0 0 33 39" />;
-    case "archive":
-      return (
-        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 33 39" aria-hidden="true">
-          <g className="fill-file-card-line">
-            {[0, 4, 8, 12, 16, 20].map((y, index) => (
-              <rect key={y} x={index % 2 ? 8 : 16.5} y={y} width={index % 2 ? 8.5 : 8} height="3.5" rx="1.75" />
-            ))}
-          </g>
-        </svg>
-      );
-    case "audio":
-      return (
-        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 33 39" aria-hidden="true">
-          <g className="fill-file-card-line">
-            <rect x="6.5" y="11.5" width="4" height="16" rx="2" />
-            <rect x="14.5" y="8" width="4" height="23" rx="2" />
-            <rect x="22.5" y="11.5" width="4" height="16" rx="2" />
-          </g>
-        </svg>
-      );
-    default:
-      return null;
-  }
-}
-
 export function FileGlyph({ kind }: { kind: FileGlyphKind }) {
-  const band = BANDS[kind];
+  const { marks, fill, grid, band } = GLYPHS[kind];
+  const [width, height] = kind === "slides" ? [41, 35] : [33, 41];
   return (
     // A fixed 41px slot centers portrait and landscape tiles alike, so file names line up.
     <span aria-hidden="true" className="flex w-[41px] shrink-0 justify-center">
-      <span data-glyph={kind}
-        className={`relative shrink-0 overflow-hidden bg-file-card-tile ${kind === "slides" ? "h-[35px] w-[41px] rounded-[8px]" : "h-[39px] w-[33px] rounded-[7px]"}`}>
-        <GlyphBody kind={kind} />
-        {band && <span className="absolute inset-x-0 bottom-0" style={{ backgroundColor: band.color, height: band.height }} />}
+      <span data-glyph={kind} className="relative shrink-0 overflow-hidden rounded-[6px] bg-file-card-tile" style={{ width, height }}>
+        <svg className="absolute inset-0 size-full" viewBox={`0 0 ${width} ${height}`}>
+          {grid && <path d={grid} className="stroke-file-card-grid" strokeWidth="0.5" fill="none" />}
+          <g className="fill-file-card-line">
+            {marks?.map(([x, y, w, h, r], index) => <rect key={index} x={x} y={y} width={w} height={h} rx={r} />)}
+            {fill && <path d={fill} />}
+          </g>
+          {band && <rect y={band.top} width={width} height={height - band.top} fill={band.color} />}
+        </svg>
+        <span className="absolute inset-0 rounded-[6px] border-[0.5px] border-file-card-tile-edge" />
       </span>
     </span>
   );

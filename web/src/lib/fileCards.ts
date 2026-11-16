@@ -52,7 +52,7 @@ export function formatSize(bytes: number | null): string | null {
   let value = bytes;
   let unit = -1;
   do { value /= 1024; unit++; } while (value >= 1024 && unit < units.length - 1);
-  return `${Number(value.toFixed(1))}${units[unit]}`;
+  return `${value >= 10 ? Math.round(value) : Number(value.toFixed(1))}${units[unit]}`;
 }
 
 /** Content-Length probes in flight or resolved, keyed by workspace file, so a card fetches its size once. */

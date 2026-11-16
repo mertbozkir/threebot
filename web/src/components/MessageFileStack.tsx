@@ -18,7 +18,7 @@ const WAVE_BARS = 44;
 function waveBars(name: string): number[] {
   let seed = 0;
   for (let index = 0; index < name.length; index++) seed = (seed * 31 + name.charCodeAt(index)) >>> 0;
-  return Array.from({ length: WAVE_BARS }, (_, index) => 4 + Math.abs((Math.sin(seed + index * 12.9898) * 43758.5453) % 1) * 12);
+  return Array.from({ length: WAVE_BARS }, (_, index) => 4 + Math.abs((Math.sin(seed + index * 12.9898) * 43758.5453) % 1) * 16);
 }
 
 function AudioFileCard({ link }: { link: MessageFileLink }) {
@@ -44,7 +44,7 @@ function AudioFileCard({ link }: { link: MessageFileLink }) {
     if (audio.current) audio.current.playbackRate = next;
   };
   return (
-    <div className="flex h-[120px] w-[355px] min-w-0 max-w-full flex-col justify-center gap-[15px] rounded-[18px] border-[0.5px] border-file-card-border bg-file-card-bg pr-6 pl-[15.5px]">
+    <div className="relative h-[120px] w-[355px] min-w-0 max-w-full rounded-[18px] border-[0.5px] border-file-card-border bg-file-card-bg pt-[15.5px] pr-6 pl-[15.5px]">
       <div className="flex items-center gap-[10px]">
         <FileGlyph kind="audio" />
         <span className="min-w-0">
@@ -52,19 +52,19 @@ function AudioFileCard({ link }: { link: MessageFileLink }) {
           <span className="mt-[2px] block truncate text-[13px] leading-4 text-muted">{detail}</span>
         </span>
       </div>
-      <div className="flex items-center gap-3">
-        <span className="flex h-9 shrink-0 items-center overflow-hidden rounded-full bg-hover">
-          <button type="button" onClick={toggle} aria-label={playing ? "Pause" : "Play"} className="grid h-full w-10 place-items-center">
+      <div className="absolute right-[12.5px] bottom-2 left-[8.5px] flex h-8 items-center gap-[11px] text-muted">
+        <span className="flex h-full shrink-0 items-center overflow-hidden rounded-full bg-file-card-pill">
+          <button type="button" onClick={toggle} aria-label={playing ? "Pause" : "Play"} className="grid h-full w-[34px] place-items-center">
             {playing ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" className="ml-0.5" />}
           </button>
-          <button type="button" onClick={cycleRate} aria-label="Playback speed" title="Playback speed" className="h-full border-l border-line px-2.5 text-[13px] font-medium tabular-nums">{rate}×</button>
+          <button type="button" onClick={cycleRate} aria-label="Playback speed" title="Playback speed" className="h-full w-[34px] border-l border-file-card-bg text-[13px] tabular-nums">{rate}×</button>
         </span>
-        <span className="flex min-w-0 flex-1 items-center gap-[3px]" aria-hidden="true">
+        <span className="flex min-w-0 flex-1 items-center gap-[3px] overflow-hidden" aria-hidden="true">
           {bars.map((height, index) => (
-            <span key={index} className={`w-[2px] shrink-0 rounded-full ${index / WAVE_BARS < progress ? "bg-fg" : "bg-fg/25"}`} style={{ height }} />
+            <span key={index} className={`w-[2px] shrink-0 rounded-full ${index / WAVE_BARS < progress ? "bg-current" : "bg-file-card-wave"}`} style={{ height }} />
           ))}
         </span>
-        <span className="text-right text-[14px] tabular-nums text-muted">{mediaDuration(elapsed)}</span>
+        <span className="shrink-0 text-[14px] tabular-nums">{mediaDuration(elapsed)}</span>
       </div>
       <audio ref={audio} src={url ?? undefined} preload="metadata" hidden
         onLoadedMetadata={(event) => setSeconds(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : null)}
@@ -97,9 +97,9 @@ function MediaTile({ file, overlay }: { file: MessageFileLink; overlay: number |
             <span className="absolute inset-0 grid place-items-center">
               <span className="grid size-12 place-items-center rounded-full bg-black/55 text-white"><Play size={20} fill="currentColor" className="ml-0.5" /></span>
             </span>
-            {duration !== null && <span className="absolute right-2 bottom-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[12px] text-white tabular-nums">{mediaDuration(duration)}</span>}
+            {duration !== null && <span className="absolute right-2 bottom-2 rounded-full bg-black/60 px-1.5 py-0.5 text-[12px] text-white tabular-nums">{mediaDuration(duration)}</span>}
           </>}
-        {overlay !== null && <span className="absolute inset-0 grid place-items-center bg-black/40 text-[32px] font-semibold text-white">+{overlay}</span>}
+        {overlay !== null && <span className="absolute inset-0 grid place-items-center bg-black/45 text-[32px] font-semibold text-white">+{overlay}</span>}
       </button>
       {viewer}
     </>
@@ -109,7 +109,7 @@ function MediaTile({ file, overlay }: { file: MessageFileLink; overlay: number |
 function MediaRow({ files }: { files: MessageFileLink[] }) {
   const { visible, overlay } = mediaRowTiles(files.length);
   return (
-    <div className="flex w-full max-w-full gap-1.5">
+    <div className="-mt-2 flex w-full max-w-full gap-1.5">
       {files.slice(0, visible).map((file, index) => (
         <MediaTile key={file.path} file={file} overlay={overlay !== null && index === visible - 1 ? overlay : null} />
       ))}
@@ -147,7 +147,7 @@ export const MessageFileStack = memo(function MessageFileStack({ text }: { text:
   }
   flush();
   return (
-    <div className="mt-1.5 flex w-full max-w-full flex-col items-start gap-[10px]">
+    <div className="mt-1.5 flex w-full max-w-full flex-col items-start gap-3">
       {rows}
       {page.hidden > 0 && (
         <button type="button" onClick={() => setExpanded(true)} className="px-1 text-[13px] text-muted underline underline-offset-2 hover:text-fg">
