@@ -128,9 +128,11 @@ export function Chat({ bot, threadId = bot.mainThreadId, onBack, embedded = fals
 
   const { scroller, showJump, onScrollCapture, onUserScrollIntent, visibleEntries, hiddenCount, loadEarlier } = useChatScroll({ threadKey: threadId ?? `bot:${bot.slug}`, loaded: data?.loaded === true, entries });
   const workspace = useMemo(() => ({ workspaceRoot: bot.workspaceRoot, threadId, openFile: setOpenFile }), [bot.workspaceRoot, threadId]);
-  const askAboutFile = useCallback((fileName: string, text: string) => {
-    void sendMessage(bot.slug, aboutFilePrompt(fileName, null, text)).catch(() => {});
-  }, [bot.slug]);
+  // Ask in the conversation on screen (a side chat or child thread, not always the main one); a failed send must not vanish with the closed viewer.
+  const askAboutFile = useCallback((fileName: string, text: string, path: string | null = null) => {
+    if (!threadId) return;
+    void sendMessage(bot.slug, aboutFilePrompt(fileName, path, text), [], threadId).catch((error: unknown) => toast(`Couldn't send your message: ${error instanceof Error ? error.message : String(error)}`));
+  }, [bot.slug, threadId]);
 
   const greeting = data?.loaded && !entries.some((e) => e.kind === "user" || e.kind === "bot");
   const reply = (text: string) => chatDraft(bot, threadId).setReply(text);
@@ -187,7 +189,7 @@ export function Chat({ bot, threadId = bot.mainThreadId, onBack, embedded = fals
           {hiddenCount > 0 && <button className="mx-auto my-3 rounded-full bg-card px-4 py-2 text-[13px] text-muted hover:bg-hover" onClick={loadEarlier}>Load earlier messages</button>}
           {visibleEntries.map((e, i) => (
             <div key={e.id} className="contents" data-chat-entry={e.id}>
-              <EntryView entry={e} prev={visibleEntries[i - 1]} bot={bot} threadId={threadId!} onOpenFile={setOpenFile} onReply={archived ? undefined : reply} accent={settings?.accent ?? "bot"} onAsk={askAboutFile} />
+              <EntryView entry={e} prev={visibleEntries[i - 1]} bot={bot} threadId={threadId!} onOpenFile={setOpenFile} onReply={archived ? undefined : reply} accent={settings?.accent ?? "bot"} onAsk={archived ? undefined : askAboutFile} />
             </div>
           ))}
           {threadId && <ConversationWork threadId={threadId} readOnly={archived} />}
@@ -223,7 +225,7 @@ export function Chat({ bot, threadId = bot.mainThreadId, onBack, embedded = fals
         const problem = await requestMicrophone();
         if (problem) toast(problem); else setVoiceChat(true);
       }} />}
-      {openFile && <FileViewer bot={bot} threadId={threadId} path={openFile} onOpenFile={setOpenFile} onClose={() => setOpenFile(null)} />}
+      {openFile && <FileViewer bot={bot} threadId={threadId} path={openFile} onOpenFile={setOpenFile} onClose={() => setOpenFile(null)} onAsk={archived ? undefined : askAboutFile} />}
       </div>
       {exchangeBot && !embedded && <BotExchange bot={bot} other={exchangeBot} />}
       {!embedded && threadId && sideChat?.parentThreadId === threadId && <SideChatSheet bot={bot} parentThreadId={threadId} threadId={sideChat.threadId}><Chat key={sideChat.threadId} bot={bot} threadId={sideChat.threadId} embedded /></SideChatSheet>}
@@ -911,10 +913,10 @@ function ComposerRunAction({ threadId, working, hasDraft, inVoiceChat, onVoiceCh
 }
 
 // ---------- file viewer ----------
-function FileViewer({ bot, threadId, path, onClose, onOpenFile }: { bot: Bot; threadId: string | null; path: string; onClose: () => void; onOpenFile: (path: string) => void }) {
+function FileViewer({ bot, threadId, path, onClose, onOpenFile, onAsk }: { bot: Bot; threadId: string | null; path: string; onClose: () => void; onOpenFile: (path: string) => void; onAsk?: (fileName: string, text: string, path: string | null) => void }) {
   const validated = workspaceFilePath(path);
-  const ask = (text: string) => void sendMessage(bot.slug, aboutFilePrompt((validated ?? path).split("/").at(-1) ?? path, validated, text)).catch(() => {});
+  const ask = validated && onAsk ? (text: string) => onAsk(validated.split("/").at(-1) ?? validated, text, validated) : undefined;
   return <WorkspaceFileContext value={{ workspaceRoot: bot.workspaceRoot, threadId, fromPath: validated ?? undefined, openFile: onOpenFile }}>
-    <WorkspaceResourceViewer key={path} resource={threadId && validated ? { _tag: "workspace-file", threadId, path: validated } : null} title={validated ?? "File unavailable"} onClose={onClose} onAsk={validated ? ask : undefined} renderText={(content) => /\.md$/i.test(path) ? <MessageContent text={content} /> : <pre className="whitespace-pre-wrap">{content}</pre>} />
+    <WorkspaceResourceViewer key={path} resource={threadId && validated ? { _tag: "workspace-file", threadId, path: validated } : null} title={validated ?? "File unavailable"} onClose={onClose} onAsk={ask} renderText={(content) => /\.md$/i.test(path) ? <MessageContent text={content} /> : <pre className="whitespace-pre-wrap">{content}</pre>} />
   </WorkspaceFileContext>;
 }

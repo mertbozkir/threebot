@@ -414,3 +414,22 @@ test("the selection hint collapses, is remembered across mounts and expands agai
   assert.match(document.querySelector(".office-hint span").textContent, /Click a cell/);
   assert.equal(localStorage.getItem("office-sheet-hint-collapsed"), "0");
 });
+
+test("a file larger than the unpacked limit is refused before it is unzipped", async () => {
+  await assert.rejects(parseXlsx(new Uint8Array(OFFICE_LIMITS.totalBytes + 1)), (error: Error) => {
+    assert.equal(error.name, "OfficeFileError");
+    assert.match(error.message, /larger than 100 MB/);
+    return true;
+  });
+});
+
+test("embedded SVG images are never turned into same-origin blob URLs", async () => {
+  const svg = strToU8('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+  const bytes = docx(DOCUMENT.replace('r:embed="rIdImg"', 'r:embed="rIdSvg"'), {
+    "word/_rels/document.xml.rels": `${XML}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdSvg" Type="${R}/image" Target="media/image1.svg"/></Relationships>`,
+    "word/media/image1.svg": svg,
+  });
+  const { images, blocks } = await parseDocx(bytes);
+  assert.deepEqual(images, []);
+  assert.ok(!JSON.stringify(blocks).includes('"image"'));
+});

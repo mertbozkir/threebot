@@ -27,6 +27,7 @@ function unzipAsync(data: Uint8Array, filter: (file: UnzipFileInfo) => boolean) 
 
 /** Sizes come from the central directory; fflate inflates into a buffer of the declared size, so they also bound memory. */
 async function openZip(data: Uint8Array, label: string): Promise<Zip> {
+  if (data.byteLength > OFFICE_LIMITS.totalBytes) throw new OfficeFileError(`This file is larger than ${OFFICE_LIMITS.totalBytes / MB} MB, so it isn't previewed.`);
   const names = new Map<string, string>();
   let total = 0;
   try {
@@ -204,7 +205,8 @@ export async function parseXlsx(input: ArrayBuffer | Uint8Array): Promise<Workbo
   return { sheets };
 }
 
-const IMAGE_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", bmp: "image/bmp", webp: "image/webp", svg: "image/svg+xml", tif: "image/tiff", tiff: "image/tiff" };
+// No SVG: a blob URL is same-origin, so an SVG opened in its own tab would run its scripts as the app.
+const IMAGE_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", bmp: "image/bmp", webp: "image/webp", tif: "image/tiff", tiff: "image/tiff" };
 
 export async function parseDocx(input: ArrayBuffer | Uint8Array): Promise<DocumentData> {
   const label = ".docx";
