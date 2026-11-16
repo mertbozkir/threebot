@@ -60,20 +60,20 @@ test('groupUsage keeps at most four named series and orders colors by size', () 
 
 test('limitGroups cards session and weekly windows together and the rest per provider', () => {
   const providers = parseProviderUsage({ providers: [
-    { instanceId: 'codex', displayName: 'Codex', usageLimits: { windows: [
+    { instanceId: 'codex', driver: 'codex', displayName: 'Codex', usageLimits: { windows: [
       { id: '5h', label: 'Session', usedPercent: 18, resetsAt: '2026-11-16T18:00:00Z' },
       { id: 'weekly', label: 'Weekly', usedPercent: 84 },
       { id: 'daily', label: 'Daily', usedPercent: 40 },
     ] } },
-    { instanceId: 'ngc', displayName: 'Claude (ngc)', usageLimits: { windows: [
+    { instanceId: 'ngc', driver: 'claudeAgent', displayName: 'Claude (ngc)', usageLimits: { windows: [
       { id: 'hourly', label: 'Rolling hour', usedPercent: 21 },
       { id: 'week', label: 'This week', usedPercent: 44 },
     ] } },
   ] });
   const cards = limitGroups(providers);
   assert.deepEqual(cards.map((card) => card.title), ['Session limits', 'Weekly limits', 'Codex limits']);
-  assert.deepEqual(cards[0].rows, [{ provider: 'Codex', percent: 18, resetsAt: '2026-11-16T18:00:00Z' }, { provider: 'Claude (ngc)', percent: 21, resetsAt: null }]);
+  assert.deepEqual(cards[0].rows, [{ provider: 'Codex', kind: 'codex', percent: 18, resetsAt: '2026-11-16T18:00:00Z' }, { provider: 'Claude (ngc)', kind: 'claudeAgent', percent: 21, resetsAt: null }]);
   assert.deepEqual(cards[1].rows.map((r) => r.provider), ['Codex', 'Claude (ngc)']);
-  assert.deepEqual(cards[2].rows, [{ provider: 'Codex', percent: 40, resetsAt: null }]);
+  assert.deepEqual(cards[2].rows, [{ provider: 'Codex', kind: 'codex', percent: 40, resetsAt: null }]);
   assert.deepEqual(limitGroups([]), []);
 });

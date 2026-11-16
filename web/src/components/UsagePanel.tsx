@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Sparkles, Terminal, User } from "lucide-react";
 import { watchProviderData } from "../lib/providerData";
 import { parseProviderUsage, peakUsage, resetsIn, limitGroups, groupUsage, totalIn, formatTokens, readBotUsage, readUsageAccounts, type BotUsage, type UsageAccounts, type ProviderUsage, type UsageLimitCard, type UsageSeries } from "../lib/usageApi";
+import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { Pill, Spinner } from "./ui";
 import { useApp } from "../store";
 
@@ -15,7 +15,6 @@ export function useUsagePeak() {
 const dayFmt = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" });
 const fmtDay = (day: string) => dayFmt.format(new Date(`${day}T00:00:00Z`));
 const sourceNames = { you: "You", routine: "Routines", bot: "Other Bots" };
-const providerIcon = (name: string) => /codex/i.test(name) ? <Terminal size={15} strokeWidth={1.7} /> : /claude|ngc/i.test(name) ? <Sparkles size={15} strokeWidth={1.7} /> : <User size={15} strokeWidth={1.7} />;
 const seriesColor = (series: UsageSeries, index: number) => series.key === "other" ? "var(--fg-faint)" : `var(--usage-s${(index % 4) + 1})`;
 
 function Segmented({ label, value, options, onChange }: { label: string; value: string; options: readonly (readonly [string, string])[]; onChange: (value: string) => void }) {
@@ -31,10 +30,10 @@ function LimitCard({ card }: { card: UsageLimitCard }) {
       const percent = Math.round(row.percent);
       const warn = row.percent >= 80;
       return <div className="usage-prov" key={`${row.provider}:${index}`}>
-        <div className="usage-who">{providerIcon(row.provider)}{row.provider}</div>
-        <div className="usage-num"><b>{percent}%</b><span>used</span></div>
-        <div className={`usage-bar${warn ? " usage-bar-warn" : ""}`} role="meter" aria-label={`${row.provider} ${card.title} usage`} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${Math.min(100, Math.max(4, percent))}%` }} /></div>
-        {row.resetsAt && <div className="usage-reset">{warn && <span className="usage-note">Almost used · </span>}{resetsIn(row.resetsAt)}</div>}
+        <div className="usage-tile" aria-hidden="true"><ProviderInstanceIcon driver={row.kind} displayName={row.provider} iconClassName="size-4" /></div>
+        <div className="usage-who"><div className="usage-name">{row.provider}</div>{row.resetsAt && <div className="usage-reset">{resetsIn(row.resetsAt)}</div>}</div>
+        <div className={`usage-bar${warn ? " usage-bar-warn" : ""}`} role="meter" aria-label={`${row.provider} ${card.title}`} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${Math.min(100, Math.max(1, percent))}%` }} /></div>
+        <div className="usage-pct">{percent}%</div>
       </div>;
     })}
   </section>;
@@ -120,10 +119,6 @@ export function UsagePanel() {
     {!providers && !error && <Spinner />}
     <div className="usage-cards">{cards.map((card) => <LimitCard key={card.title} card={card} />)}</div>
     {providers?.length === 0 && <p>No provider limits reported.</p>}
-    {providers?.map((provider) => (provider.externalUrl || provider.checkedAt) && <p className="usage-updated" key={provider.id}>
-      {provider.externalUrl && <a className="usage-manage" href={provider.externalUrl} target="_blank" rel="noreferrer">Manage {provider.name} usage ↗</a>}
-      {provider.checkedAt && <span>{provider.name} · Updated {new Date(provider.checkedAt).toLocaleString()}</span>}
-    </p>)}
 
     <p className="usage-label">Bot usage</p>
     <section className="usage-card">
