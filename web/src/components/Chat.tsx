@@ -1,6 +1,6 @@
-import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentPropsWithoutRef } from "react";
 import clsx from "clsx";
-import { defaultUrlTransform } from "react-markdown";
+import { defaultUrlTransform, type ExtraProps } from "react-markdown";
 import { ArrowDown, ArrowUp, AudioLines, Camera, ChevronLeft, Eraser, Globe, FileText, Folder, Image, MessageCircle, Mic, Monitor, PanelRight, Plus, Square, X } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { botTextColor, bubbleColors } from "../lib/character";
@@ -9,6 +9,8 @@ import { BotExchange } from "./BotExchange";
 import { ApprovalCard, AutomatedCard, DateSep, ErrorLine, EventLine, FileCard, PageCard, QuestionCard, SecretCard, SubagentCard, ToolImage, useBotsByThread } from "./Cards";
 import { WorkspaceFileContext, WorkspaceMessageImage, WorkspaceResourceViewer } from "./WorkspaceResource";
 import { workspaceFilePath, workspaceLinkPath } from "../lib/workspaceLinks";
+import { fileCardAccent, fileTypeLabel, soloFileLinkParagraph } from "../lib/fileCards";
+import { FileCard as DocumentCard } from "./FileCard";
 import { RichMarkdown } from "./RichMarkdown";
 import { BoardItemChip } from "./Projects";
 import { parseItemLink } from "../lib/projects";
@@ -328,8 +330,17 @@ const MessageContent = memo(function MessageContent({ text }: { text: string }) 
   // Bot polling replaces objects even when names have not changed. Markdown
   // parsing depends on those names, not on labels, run status or timestamps.
   const referencesKey = JSON.stringify(Object.values(bots).map((b) => ({ slug: b.slug, name: b.name })));
-  return useMemo(() => <RichMarkdown bots={Object.values(bots).map((b) => ({ slug: b.slug, name: b.name }))} components={{ a: MessageLink, img: WorkspaceMessageImage }} urlTransform={(url) => parseThreadLink(url) || url.startsWith("bot:") || (workspace && workspaceLinkPath(url, workspace.workspaceRoot, workspace.fromPath)) ? url : defaultUrlTransform(url)}>{text}</RichMarkdown>, [text, referencesKey, workspace]);
+  return useMemo(() => <RichMarkdown bots={Object.values(bots).map((b) => ({ slug: b.slug, name: b.name }))} components={{ a: MessageLink, p: MessageParagraph, img: WorkspaceMessageImage }} urlTransform={(url) => parseThreadLink(url) || url.startsWith("bot:") || (workspace && workspaceLinkPath(url, workspace.workspaceRoot, workspace.fromPath)) ? url : defaultUrlTransform(url)}>{text}</RichMarkdown>, [text, referencesKey, workspace]);
 });
+
+/** A paragraph holding nothing but a workspace-file link renders as the file card. */
+function MessageParagraph({ node, children }: ComponentPropsWithoutRef<"p"> & ExtraProps) {
+  const workspace = useContext(WorkspaceFileContext);
+  const solo = workspace && node ? soloFileLinkParagraph(node, (href) => workspaceLinkPath(href, workspace.workspaceRoot, workspace.fromPath)) : null;
+  if (!solo || !workspace) return <p>{children}</p>;
+  const name = solo.text.trim() || solo.path.split("/").at(-1) || solo.path;
+  return <DocumentCard name={name} detail={fileTypeLabel(solo.path)} accent={fileCardAccent(solo.path)} onOpen={() => workspace.openFile(solo.path)} />;
+}
 
 /** Links to the user's Executor (sign-in links Bots post) render as Connect cards. */
 function MessageLink({ href, children }: { href?: string; children?: React.ReactNode }) {

@@ -47,12 +47,12 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); document.body.replaceChildren(); mock.restoreAll(); });
 
-test("CSV tile shows native-style basename, actual type/size and a signed table preview", async () => {
+test("CSV tile shows the full file name, compact size and a signed table preview", async () => {
   await render([{ id: "csv", type: "file", name: "sample.csv", mimeType: "text/csv", sizeBytes: 27 }]);
   const open = button("Open sample.csv");
-  assert.equal(open.textContent, "sampleCSV · 27 B");
+  assert.equal(open.textContent, "sample.csv27B");
   assert.equal(open.title, "sample.csv");
-  assert.ok(open.querySelector("svg.lucide-file-spreadsheet"));
+  assert.equal(open.querySelector("[data-accent]").getAttribute("data-accent"), "sheet");
   assert.equal(button("Download sample.csv").title, "Download sample.csv");
   await click("Open sample.csv");
   assert.deepEqual([...document.querySelectorAll('[role="dialog"] td')].map((cell) => cell.textContent), ["example", "1"]);
@@ -61,14 +61,21 @@ test("CSV tile shows native-style basename, actual type/size and a signed table 
   assert.equal(document.querySelector('[role="dialog"] a').getAttribute("href"), "/t3/assets/current-1");
 });
 
+test("the card glyph follows the file type: PDF, spreadsheet, document, slides and everything else", async () => {
+  for (const [name, accent] of [["doc.pdf", "pdf"], ["table.xlsx", "sheet"], ["memo.docx", "doc"], ["deck.pptx", "slides"], ["archive.bin", "other"]]) {
+    await render([{ id: "typed", name }]);
+    assert.equal(button(`Open ${name}`).querySelector("[data-accent]").getAttribute("data-accent"), accent, name);
+  }
+});
+
 test("file sizes include genuine zero and scale valid byte counts without invented metadata", async () => {
-  for (const [bytes, detail] of [[0, "0 B"], [1023, "1023 B"], [1024, "1 KB"], [1572864, "1.5 MB"]]) {
+  for (const [bytes, detail] of [[0, "0B"], [1023, "1023B"], [1024, "1kB"], [1572864, "1.5MB"]]) {
     await render([{ id: "size", name: "archive.bin", sizeBytes: bytes }]);
-    assert.equal(button("Open archive.bin").textContent, "archiveBIN · " + detail);
+    assert.equal(button("Open archive.bin").textContent, "archive.bin" + detail);
   }
   for (const invalid of [undefined, null, "27", -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
     await render([{ id: "size", name: "archive.bin", sizeBytes: invalid }]);
-    assert.equal(button("Open archive.bin").textContent, "archiveBIN");
+    assert.equal(button("Open archive.bin").textContent, "archive.binFile");
   }
 });
 
@@ -77,8 +84,7 @@ test("extensionless image MIME survives thumbnail failure and opens the real ima
   const thumbnail = button("Open holiday").querySelector("img");
   assert.equal(thumbnail.getAttribute("src"), "/t3/assets/current-1");
   await act(async () => thumbnail.dispatchEvent(new window.Event("error")));
-  assert.equal(button("Open holiday").textContent, "holidayPNG · 512 B");
-  assert.ok(button("Open holiday").querySelector("svg.lucide-file-image"));
+  assert.equal(button("Open holiday").textContent, "holiday512B");
   await click("Open holiday");
   const image = document.querySelector<HTMLImageElement>('[role="dialog"] img');
   assert.equal(image.getAttribute("src"), "/t3/assets/current-2");
@@ -93,8 +99,7 @@ test("unknown formats and invalid MIME retain full accessible names and a workin
   const name = "really-long-name-".repeat(30) + ".mystery";
   await render([null, { id: "" }, { id: "unknown", name, mimeType: "image/not-a-supported-format", sizeBytes: "27" }]);
   const open = button("Open " + name);
-  assert.equal(open.textContent, name.slice(0, -8) + "MYSTERY");
-  assert.ok(open.querySelector("svg.lucide-file"));
+  assert.equal(open.textContent, name + "File");
   assert.equal(open.title, name);
   assert.deepEqual(calls, [], "an unknown image MIME does not initiate thumbnail work");
   await click("Open " + name);
@@ -108,10 +113,10 @@ test("unknown formats and invalid MIME retain full accessible names and a workin
   }
 });
 
-for (const [mimeType, selector, detail] of [["application/pdf", null, "PDF"], ["video/mp4", "video", "MP4"], ["text/plain", "pre", "Text"], ["text/html", "iframe", "HTML"]]) {
+for (const [mimeType, selector] of [["application/pdf", null], ["video/mp4", "video"], ["text/plain", "pre"], ["text/html", "iframe"]]) {
   test(`extensionless ${mimeType} uses metadata for the actual resource viewer`, async () => {
     await render([{ id: "extensionless", name: "resource", mimeType, sizeBytes: 27 }]);
-    assert.equal(button("Open resource").textContent, "resource" + detail + " · 27 B");
+    assert.equal(button("Open resource").textContent, "resource27B");
     await click("Open resource");
     if (selector === null) {
       assert.equal(document.querySelector('[role="dialog"] iframe'), null, "pdf.js draws PDFs, not a frame");
