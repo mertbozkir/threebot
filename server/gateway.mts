@@ -59,6 +59,7 @@ import { BETA_DEFAULTS, betaSettings, patchBeta, settleBetaDefaults } from "./be
 import { computerSetting, createDesktop, createDesktopTools, createRfbClientFilter, DESKTOP_TOOLS, pasteText, sshDockerRuntime, type ComputerSetting } from "./desktop.mts";
 import net from "node:net";
 import { aggregateTurnUsage, createTelemetry, MIN_T3_FOR_TOKENS, versionAtLeast, type PayloadInput } from "./telemetry.mts";
+import { accountsFromBuckets, createUsageLedger, turnsFromProjection, usageDays, type UsageEntry } from "./bot-usage.mts";
 import { AVATAR_BODY_LIMIT, avatarImagePatch, decodeAvatarImage, storeAvatarImage, readAvatarImage } from "./avatar-images.mts";
 
 /** What route handlers and helpers throw: an Error, optionally with the HTTP status and a code to show. */
@@ -335,6 +336,51 @@ async function collectUsageStats({ since, until }: { since: number; until: numbe
     tokens,
   };
 }
+
+// Settings › Usage: Bot token usage from a small ledger (counts only, mode 0600) that reads Bot thread
+// projections every 15 minutes, and T3's per-account totals read on demand. Nothing here may fail a pass.
+const usageLedger = createUsageLedger({ file: path.join(appDir, "usage", "ledger.json") });
+let usagePassAt = 0;
+let usageScannedAt = 0;
+let usagePassRunning = false;
+/** Records the finished provider turns of Bot threads changed since the last pass. Never throws. */
+async function refreshUsageLedger() {
+  if (usagePassRunning) return;
+  usagePassRunning = true;
+  try {
+    const [bots, threads] = await Promise.all([listBots(), shellThreads(false).catch(() => null)]);
+    if (threads) {
+      const since = usageScannedAt || Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const started = Date.now();
+      const recent = threads.filter((thread) => (Date.parse(thread.updatedAt ?? "") || started) > since);
+      const slugOfProject = new Map(bots.map((bot) => [bot.projectId, bot.slug]).filter(([projectId]) => projectId) as [string, string][]);
+      const slugOfMain = new Map(bots.map((bot) => [bot.mainThreadId, bot.slug]).filter(([mainThreadId]) => mainThreadId) as [string, string][]);
+      const { timezone } = await getSettings();
+      const timeZone = timezone?.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const entries: UsageEntry[] = [];
+      // One pass reads at most 200 threads and gives up on the clock, like the usage-stats collector.
+      const deadline = started + 60_000;
+      let scanned = usageScannedAt;
+      for (const thread of botThreads(recent, bots).slice(0, 200)) {
+        if (Date.now() > deadline) break;
+        // A thread whose read failed keeps its stamp, so the next pass tries it again.
+        const projection = await withTimeout(t3rpc(), 10000, "T3 timed out").then((client) => withTimeout(client.call("orchestration.getThreadProjection", { threadId: thread.id }), 15000, "T3 timed out")).catch(() => null);
+        if (!projection) continue;
+        const updatedAt = Date.parse(thread.updatedAt ?? "") || 0;
+        if (updatedAt > scanned) scanned = updatedAt;
+        const bot = slugOfMain.get(thread.id) ?? slugOfMain.get(thread.lineage?.rootThreadId ?? "") ?? slugOfMain.get(thread.lineage?.parentThreadId ?? "") ?? slugOfProject.get(thread.projectId ?? "") ?? "unknown";
+        entries.push(...turnsFromProjection(projection as Parameters<typeof turnsFromProjection>[0], { bot, timeZone }));
+      }
+      if (entries.length) { await usageLedger.add(entries); await usageLedger.save(); }
+      usageScannedAt = scanned;
+    }
+    usagePassAt = Date.now();
+  } catch (error) {
+    console.log(`usage ledger: ${(error as Error).message ?? "refresh failed"}`.slice(0, 200));
+  } finally { usagePassRunning = false; }
+}
+setTimeout(() => void refreshUsageLedger(), 30_000).unref();
+setInterval(() => void refreshUsageLedger(), 15 * 60_000).unref();
 const passwordRequired = async () => Boolean(cfg.password) || (await remoteAccess.hasPassword());
 async function passwordMatches(password: string) {
   if (cfg.password) return safeEqual(password, cfg.password);
@@ -1304,6 +1350,24 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/telemetry" && req.method === "PUT") return send(res, 200, await telemetry.setEnabled((await readBody(req)).enabled));
     if (p === "/api/telemetry/preview" && req.method === "GET") return send(res, 200, await telemetry.preview(), { "cache-control": "no-store" });
     if (p === "/api/telemetry/reset-id" && req.method === "POST") return send(res, 200, await telemetry.resetId());
+    if (p === "/api/usage/bots" || p === "/api/usage/accounts") {
+      const days = Number(url.searchParams.get("days") ?? 7);
+      if (days !== 7 && days !== 30) return send(res, 400, { error: "days must be 7 or 30" });
+      const { timezone } = await getSettings();
+      const timeZone = timezone?.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (p === "/api/usage/bots") {
+        // A pass older than two minutes may have missed recent turns; one bounded refresh, then answer.
+        if (Date.now() - usagePassAt > 120_000) await refreshUsageLedger();
+        return send(res, 200, await usageLedger.rows({ days, timeZone }), { "cache-control": "no-store" });
+      }
+      const { since, until } = usageDays(days, timeZone);
+      try {
+        const summary = await withTimeout((await withTimeout(t3rpc(), 10000, "T3 timed out")).call("server.getUsageSummary", { sinceDay: since, untilDay: until, timeZone, provisional: true }), 15000, "T3 timed out") as { buckets?: unknown } | null;
+        return send(res, 200, { since, until, timeZone, accounts: accountsFromBuckets(summary?.buckets) }, { "cache-control": "no-store" });
+      } catch (error) {
+        return send(res, 502, { error: `Usage summary unavailable: ${String((error as Error).message ?? error).slice(0, 120)}` });
+      }
+    }
     if (p === "/api/voice/cloud" && req.method === "GET") return send(res, 200, await cloudTranscription.status(), { "cache-control": "no-store" });
     if (p === "/api/voice/cloud" && req.method === "PUT") {
       requireJson(req);

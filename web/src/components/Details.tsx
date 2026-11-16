@@ -22,6 +22,7 @@ import type { Bot, ModelSelection, ScheduledTask } from "../lib/types";
 
 import { chatDraft } from "../lib/chatDrafts";
 import { enablePushNotifications } from "../lib/push";
+import { formatTokens, readBotUsage } from "../lib/usageApi";
 import "./routines.css";
 import { changeRoutineEnabled, changeRoutineFreshSession, copyWebhookUrl, displayTimezone, removeRoutine, routineDate, routineHistory, scheduleText, testRoutine, threadMode } from "../lib/routines";
 export { scheduleText } from "../lib/routines";
@@ -153,6 +154,7 @@ export function Details({ bot, threadId }: { bot: Bot; threadId: string | null }
             </div>}
             {!showRoutines && !archived && <ModelSection bot={bot} threadId={threadId} />}
             {!showRoutines && !archived && threadId === bot.mainThreadId && <CodingWorkSection bot={bot} />}
+            {!showRoutines && !archived && <BotUsageLine bot={bot} />}
             {!showRoutines && threadId && <ThreadFamily bot={bot} threadId={threadId} />}
             {!showRoutines && threadId && <SideChatList parentThreadId={threadId} />}
             {threadId && threadId !== bot.mainThreadId && bot.mainThreadId && <Pill variant="soft" className="mb-4" onClick={() => bot.mainThreadId && selectThread(bot, bot.mainThreadId)}>Back to {bot.name}</Pill>}
@@ -191,6 +193,24 @@ function CodingWorkSection({ bot }: { bot: Bot }) {
     <CodingWorkRows value={bot.codingWork ?? null} machines={machines} inherit={inherit}
       onChange={(codingWork) => void updateBot(bot.slug, { codingWork })} />
   </div></Section></div>;
+}
+
+/** This Bot's token use this week; the line opens Settings → Usage. */
+function BotUsageLine({ bot }: { bot: Bot }) {
+  const [total, setTotal] = useState<number | null>(null);
+  useEffect(() => {
+    let live = true;
+    readBotUsage(7).then((data) => {
+      if (live) setTotal(data.rows.filter((row) => row.bot === bot.slug).reduce((sum, row) => sum + row.input + row.output, 0));
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [bot.slug]);
+  if (total === null) return null;
+  return <div className="details-usage mb-5"><Section title="Usage">
+    <button onClick={() => { useApp.setState({ settingsPane: "usage" }); openDialog("settings"); }} className="flex min-h-11 w-full items-center rounded-2xl bg-card px-3.5 text-left text-[13px] text-muted enabled:hover:text-fg">
+      {formatTokens(total)} tokens this week
+    </button>
+  </Section></div>;
 }
 
 function AvatarDialog({ bot, onClose }: { bot: Bot; onClose: () => void }) {
