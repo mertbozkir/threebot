@@ -56,7 +56,7 @@ import { createRoomRoutes } from "./rooms-routes.mts";
 import { PROJECT_TOOLS, createProjectTools } from "./projects-mcp.mts";
 import { createProjectRoutes } from "./projects-routes.mts";
 import { BETA_DEFAULTS, betaSettings, patchBeta, settleBetaDefaults } from "./beta.mts";
-import { computerSetting, createDesktop, createDesktopTools, createRfbClientFilter, DESKTOP_TOOLS, pasteText, sshDockerRuntime, type ComputerSetting } from "./desktop.mts";
+import { computerSetting, createDesktop, createDesktopTools, createRfbClientFilter, DESKTOP_TOOLS, pasteText, sshDockerRuntime, type ComputerSetting, type ComputerStatus } from "./desktop.mts";
 import net from "node:net";
 import { aggregateTurnUsage, createTelemetry, MIN_T3_FOR_TOKENS, versionAtLeast, type PayloadInput } from "./telemetry.mts";
 import { accountsFromBuckets, createUsageLedger, turnsFromProjection, usageDays, type UsageEntry } from "./bot-usage.mts";
@@ -514,6 +514,11 @@ async function makeDesktop(computer: ComputerSetting) {
   return createDesktop({ ...options, supported: process.platform === "darwin" });
 }
 let desktop = await makeDesktop(computerSetting((await getSettings()).computer));
+/** The spec's /api/computer body: where it runs (from the settings) plus the desktop's own status. */
+async function computerBody(status?: ComputerStatus) {
+  const setting = computerSetting((await getSettings()).computer);
+  return { where: setting.where, ...(setting.where === "ssh" ? { host: setting.host } : {}), ...(status ?? (await desktop.computerStatus())) };
+}
 function botDir(slug: string) {
   if (!SLUG_RE.test(slug)) throw Object.assign(new Error("bad slug"), { status: 400 });
   return path.join(cfg.botsRoot, slug);
@@ -1535,6 +1540,21 @@ const server = http.createServer(async (req, res) => {
         await desktop.typeText(slug, text);
         return send(res, 200, { ok: true }, { "cache-control": "no-store" });
       }
+    }
+    if (p === "/api/computer" && req.method === "GET") {
+      if (!(await desktopOn())) return send(res, 404, { error: "not found" });
+      return send(res, 200, await computerBody(), { "cache-control": "no-store" });
+    }
+    if (p === "/api/computer/update" && req.method === "POST") {
+      if (!(await desktopOn())) return send(res, 404, { error: "not found" });
+      return send(res, 200, await computerBody(await desktop.update()), { "cache-control": "no-store" });
+    }
+    if (p === "/api/computer/reset" && req.method === "POST") {
+      if (!(await desktopOn())) return send(res, 404, { error: "not found" });
+      requireJson(req);
+      const body = await readBody(req, 4096);
+      if (typeof body?.erase !== "boolean") return send(res, 400, { error: "erase must be a boolean" });
+      return send(res, 200, await computerBody(await desktop.reset({ erase: body.erase })), { "cache-control": "no-store" });
     }
     if (p.startsWith("/api/")) return send(res, 404, { error: "not found" });
 

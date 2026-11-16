@@ -14,10 +14,11 @@ import { RemoteAccessPane, UpdatesPane, useUpdateNotice } from "./RemoteAccess";
 import { UsageStatsPane } from "./UsageStats";
 import { MachinesPane } from "./MachinesPane";
 import { fastDrawingModel } from "../lib/avatarDrawing";
-import { defaultModel, openDialog, saveFallbackModel, saveSettings, toast, useApp } from "../store";
+import { defaultModel, loadMachines, openDialog, saveFallbackModel, saveSettings, toast, useApp } from "../store";
 import { api, signOutTarget } from "../lib/api";
+import { connectionPill, updateNote } from "../lib/computerStatus";
 import { t3http } from "../lib/t3";
-import type { ModelSelection, Settings } from "../lib/types";
+import type { ComputerStatus, Machine, ModelSelection, Settings } from "../lib/types";
 import { saveVoiceSettings } from "../lib/voiceChat";
 import { cloudTranscription, PROVIDER_LABELS, saveCloudTranscription, type CloudProvider, type CloudTranscription, type CloudTranscriptionPatch } from "../lib/cloudSpeech";
 import { useVoiceSettings, voiceLanguageOptions } from "./VoiceDock";
@@ -86,14 +87,14 @@ export function SettingsDialog() {
                 {pane === "general" && <General s={settings} />}
                 {pane === "account" && <General s={settings} accountOnly />}
                 {pane === "timezone" && <TimeZoneSettings s={settings} />}
-                {pane === "computer" && <Computer />}
+                {pane === "computer" && <Computer onPane={navigatePane} />}
                 {pane === "bots" && <BotsPane />}
                 {pane === "machines" && <MachinesPane save={save} />}
                 {pane === "permissions" && <Permissions s={settings} />}
                 {pane === "vault" && <VaultPane />}
                 {pane === "access" && <RemoteAccessPane />}
                 {pane === "updates" && <UpdatesPane t3={<T3Version />} />}
-                {pane === "beta" && <Beta s={settings} />}
+                {pane === "beta" && <Beta s={settings} onPane={navigatePane} />}
                 {pane === "usage-stats" && <UsageStatsPane />}
                 {pane === "usage" && <UsagePanel />}
                 {pane === "appearance" && <Appearance s={settings} />}
@@ -367,15 +368,9 @@ const BETA_FEATURES = [
   { key: "desktop", title: "Computer", desc: "A Linux desktop on this machine with a screen for each Bot. Watch them work or take control. It sleeps after 2 idle minutes; files and sign-ins stay." },
 ] as const;
 
-function Beta({ s }: { s: Settings }) {
+function Beta({ s, onPane }: { s: Settings; onPane: (pane: string) => void }) {
   const save = useContext(SettingsSave);
   const beta = s.beta ?? { projects: false, desktop: false };
-  const computer = s.computer ?? { where: "mac" as const };
-  // What the menu shows: "Another machine" reveals the host field; the save happens there or on switching back.
-  const savedHost = computer.where === "ssh" ? computer.host : "";
-  const [where, setWhere] = useState<"mac" | "ssh">(computer.where);
-  const [host, setHost] = useState(savedHost);
-  useEffect(() => { setWhere(computer.where); setHost(savedHost); }, [s.computer]);
   return (
     <>
       <p className="mb-4 text-[13px] text-muted">Features that are still taking shape. Switching one off hides it from you and your Bots; nothing is deleted.</p>
@@ -385,16 +380,8 @@ function Beta({ s }: { s: Settings }) {
             <Switch checked={beta[f.key] === true} onChange={(v) => save({ beta: { ...beta, [f.key]: v } })} label={f.title} />
           </Row>
         ))}
-        {beta.desktop && <Row title="Runs on" desc={where === "ssh" ? "A Docker host reached over SSH. Switching stops the computer; files and sign-ins stay on each machine." : "This Mac, or another machine you reach over SSH. Switching stops the computer; files and sign-ins stay on each machine."}>
-          <Select label="Runs on" value={where} onChange={(next) => { setWhere(next); if (next === "mac") void save({ computer: { where: "mac" } }); }} options={[["mac", "This Mac"], ["ssh", "Another machine"]]} />
-        </Row>}
-        {beta.desktop && where === "ssh" && <Row title="SSH host" desc="A host from your ~/.ssh/config with Docker running on it.">
-          <form className="flex items-center gap-2" onSubmit={(event) => { event.preventDefault(); if (host.trim() && host.trim() !== savedHost) void save({ computer: { where: "ssh", host: host.trim() } }); }}>
-            <input aria-label="SSH host" value={host} onChange={(event) => setHost(event.target.value)} placeholder="a host from your ~/.ssh/config" className="h-8 w-48 rounded-lg border border-line bg-elevated px-2.5 text-[13px] outline-none" />
-            <button type="submit" disabled={!host.trim() || host.trim() === savedHost} className="text-[12.5px] text-muted hover:text-fg disabled:opacity-50">Save</button>
-          </form>
-        </Row>}
       </Group>
+      {beta.desktop && <p className="mb-4 text-[13px] text-muted">Set it up in <button type="button" className="text-fg hover:underline" onClick={() => onPane("computer")}>Settings › Computer</button>.</p>}
       <Group title="Cloud transcription">
         <CloudDictationRows />
       </Group>
@@ -427,7 +414,32 @@ function EnvironmentError({ retry }: { retry: () => void }) {
   return <div role="alert" className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-line p-3 text-[13px] text-muted"><span className="flex-1">Couldn't load computer information.</span><Pill variant="soft" onClick={retry}>Retry</Pill></div>;
 }
 
-function Computer() {
+function Computer({ onPane }: { onPane: (pane: string) => void }) {
+  const betaOn = useApp((s) => s.settings?.beta?.desktop === true);
+  return betaOn ? <ComputerSetup onPane={onPane} /> : <ComputerServer />;
+}
+
+/** GET /api/computer, polled every 3 s while an update builds. */
+function useComputerStatus() {
+  const [state, setState] = useState<{ status: ComputerStatus | null; failed: boolean }>({ status: null, failed: false });
+  const building = state.status?.state === "building";
+  useEffect(() => {
+    let alive = true;
+    api.computerStatus().then((status) => { if (alive) setState({ status, failed: false }); }, () => { if (alive) setState((prev) => ({ ...prev, failed: true })); });
+    return () => { alive = false; };
+  }, []);
+  useEffect(() => {
+    if (!building) return;
+    const timer = window.setInterval(() => {
+      void api.computerStatus().then((status) => setState({ status, failed: false }), () => {});
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [building]);
+  return [state.status, state.failed, (status: ComputerStatus) => setState({ status, failed: false })] as const;
+}
+
+/** The pane without the Computer beta: the server this app runs on. */
+function ComputerServer() {
   const { state, retry } = useEnvironment();
   const botsRoot = useApp((s) => s.botsRoot);
   const connection = useApp((s) => s.connection);
@@ -443,6 +455,139 @@ function Computer() {
         <Row title="Agent runtime" desc={state.kind === "loading" ? "Loading…" : state.kind === "ready" ? `T3 Code ${state.value.serverVersion}` : "Unavailable"} />
       </Group>
     </>
+  );
+}
+
+/** Settings › Computer while the beta is on: where the desktop runs, the machines, and the update and reset controls. */
+function ComputerSetup({ onPane }: { onPane: (pane: string) => void }) {
+  const save = useContext(SettingsSave);
+  const settings = useApp((s) => s.settings);
+  const machines = useApp((s) => s.machines);
+  const [status, statusFailed, setStatus] = useComputerStatus();
+  const [resetOpen, setResetOpen] = useState(false);
+  const computer = settings?.computer ?? { where: "mac" as const };
+  const savedHost = computer.where === "ssh" ? computer.host : "";
+  const [where, setWhere] = useState<"mac" | "ssh">(computer.where);
+  const [host, setHost] = useState(savedHost);
+  useEffect(() => { setWhere(computer.where); setHost(savedHost); }, [settings?.computer]);
+  useEffect(() => { void loadMachines(true); }, []);
+  const building = status?.state === "building";
+  const [updating, setUpdating] = useState(false);
+  const startUpdate = async () => {
+    setUpdating(true);
+    try { setStatus(await api.computerUpdate()); }
+    catch (error) { toast(error instanceof Error ? error.message : "Couldn't start the update"); }
+    finally { setUpdating(false); }
+  };
+  const pill = status ? connectionPill(status) : null;
+  const liveness = !status ? null : status.state === "healthy" ? "Live" : status.state === "stopped" || status.state === "off" ? "Sleeping" : status.state === "building" ? "Updating" : status.state === "starting" ? "Starting" : status.state === "stopping" ? "Stopping" : "Unavailable";
+  const runsComputer = (machine: Machine) => computer.where === "mac" ? machine.local : !!savedHost && (machine.environmentId === savedHost || machine.label === savedHost);
+  const list = machines ?? [];
+  const sshRow = computer.where === "ssh" && !!savedHost && !list.some(runsComputer);
+  const total = list.length + (sshRow ? 1 : 0);
+  const rows = list.map((machine, i) => {
+    const online = machine.local || machine.status === "online";
+    return (
+      <div key={machine.environmentId} className={clsx("flex items-center gap-3 px-4 py-3.5", i < total - 1 && "border-b border-line")}>
+        <span className="grid size-8 flex-none place-items-center rounded-lg border border-line text-muted"><Monitor size={16} /></span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[13.5px]">{machine.label}</div>
+          {runsComputer(machine) && liveness && <div className="mt-0.5 text-[12.5px] text-muted">Bot's computer · {liveness}</div>}
+        </div>
+        <span className={clsx("inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px]", online ? "bg-success/15 text-success" : "bg-active text-muted")}>
+          <span aria-hidden="true" className={clsx("size-1.5 rounded-full", online ? "bg-success" : "bg-line-strong")} />
+          {machine.local ? "This Mac" : online ? "Online" : "Offline"}
+        </span>
+      </div>
+    );
+  });
+  if (sshRow) rows.push(
+    <div key="computer-host" className="flex items-center gap-3 px-4 py-3.5">
+      <span className="grid size-8 flex-none place-items-center rounded-lg border border-line text-muted"><Monitor size={16} /></span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[13.5px]">{savedHost}</div>
+        {liveness && <div className="mt-0.5 text-[12.5px] text-muted">Bot's computer · {liveness}</div>}
+      </div>
+    </div>,
+  );
+  return (
+    <>
+      <H>Computer</H>
+      <Group title="Where it runs">
+        <Row title="Runs on" desc={where === "ssh" ? "A Docker host reached over SSH. Switching stops the computer; files and sign-ins stay on each machine." : "This Mac, or another machine you reach over SSH. Switching stops the computer; files and sign-ins stay on each machine."}>
+          <Select label="Runs on" value={where} onChange={(next) => { setWhere(next); if (next === "mac") void save({ computer: { where: "mac" } }); }} options={[["mac", "This Mac"], ["ssh", "Another machine"]]} />
+        </Row>
+        {where === "ssh" && <Row title="SSH host" desc="A host from your ~/.ssh/config with Docker running on it.">
+          <form className="flex items-center gap-2" onSubmit={(event) => { event.preventDefault(); if (host.trim() && host.trim() !== savedHost) void save({ computer: { where: "ssh", host: host.trim() } }); }}>
+            <input aria-label="SSH host" value={host} onChange={(event) => setHost(event.target.value)} placeholder="a host from your ~/.ssh/config" className="h-8 w-48 rounded-lg border border-line bg-elevated px-2.5 text-[13px] outline-none" />
+            <button type="submit" disabled={!host.trim() || host.trim() === savedHost} className="text-[12.5px] text-muted hover:text-fg disabled:opacity-50">Save</button>
+          </form>
+        </Row>}
+        <Row title="Connection">
+          {status ? <span className={clsx("shrink-0 rounded-full px-2.5 py-1 text-[12px]", pill!.tone === "good" ? "bg-success/15 text-success" : "bg-attention/15 text-attention")}>{pill!.text}</span>
+            : statusFailed ? <span className="shrink-0 rounded-full bg-attention/15 px-2.5 py-1 text-[12px] text-attention">Couldn't check</span>
+            : <Spinner />}
+        </Row>
+      </Group>
+      <Group title="Your computer">
+        <button onClick={() => onPane("permissions")} className="flex w-full items-center gap-4 px-4 py-3.5 text-left hover:bg-hover">
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13.5px]">Execution on this Mac</span>
+            <span className="mt-0.5 block text-[12.5px] text-muted">What Bots may run here without asking. Set in Permissions.</span>
+          </span>
+          <ChevronRight size={18} className="shrink-0 text-muted" />
+        </button>
+      </Group>
+      <Group title="Devices">
+        {machines === null ? <div role="status" className="grid h-20 place-items-center"><Spinner /></div>
+          : rows.length === 0 ? <div className="px-4 py-3.5 text-[12.5px] text-muted">No machines yet. Link one in T3 Code (Settings → Connections → Linked environments).</div>
+          : rows}
+      </Group>
+      <Group title="Bot's computer">
+        <Row title="Update Bot's computer" desc="Rebuilds the desktop with fresh packages. Files and sign-ins stay; apps installed on it are removed. All Bots update together.">
+          <Pill onClick={() => void startUpdate()} disabled={building || updating} aria-busy={building || updating}>{building || updating ? "Updating…" : "Update"}</Pill>
+        </Row>
+        {status && <div className="border-b border-line bg-active/40 px-4 py-3 text-[12.5px] text-muted">{updateNote(status).text}</div>}
+        <div className="flex items-center gap-4 px-4 py-3.5">
+          <div className="min-w-0 flex-1">
+            <div className="text-[13.5px]">Reset Bot's computer</div>
+            <div className="mt-0.5 text-[12.5px] text-muted">Start fresh if it gets stuck.</div>
+          </div>
+          <Pill variant="danger" onClick={() => setResetOpen(true)}>Reset</Pill>
+        </div>
+      </Group>
+      {resetOpen && <ResetComputerModal onClose={() => setResetOpen(false)} />}
+    </>
+  );
+}
+
+/** Confirm before the Bots' computer is torn down; erasing the volumes too is opt-in. */
+function ResetComputerModal({ onClose }: { onClose: () => void }) {
+  const [erase, setErase] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const reset = async () => {
+    setBusy(true);
+    setError("");
+    try { await api.computerReset(erase); onClose(); }
+    catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Couldn't reset"); setBusy(false); }
+  };
+  return (
+    <Modal onClose={onClose} title="Reset Bot's computer?" label="Reset Bot's computer" className="w-[460px]">
+      <div className="px-4 py-4 text-[13.5px] leading-5">This shuts down the current computer and starts a fresh one. Any running work is interrupted. Apps and packages installed on it are removed. Your files and sign-ins stay.</div>
+      <div className="space-y-3 px-4 pb-4">
+        <label className="flex items-center gap-2 text-[13.5px]">
+          <input type="checkbox" checked={erase} onChange={(event) => setErase(event.target.checked)} className="size-4 accent-current" />
+          Also erase files and sign-ins
+        </label>
+        {erase && <div role="note" className="rounded-xl border border-danger/30 bg-danger/10 p-3 text-[12.5px] text-danger">Files and browser sign-ins on the computer will be deleted. This can't be undone.</div>}
+        {error && <div role="alert" className="rounded-xl border border-danger/30 bg-danger/10 p-3 text-[12.5px] text-danger">{error}</div>}
+      </div>
+      <div className="flex gap-2 px-4 pb-4">
+        <Pill variant="ghost" className="flex-1" disabled={busy} onClick={onClose}>Cancel</Pill>
+        <Pill variant="danger" className="flex-1" disabled={busy} onClick={() => void reset()}>Reset Bot's computer</Pill>
+      </div>
+    </Modal>
   );
 }
 

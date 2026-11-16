@@ -361,10 +361,12 @@ test("the ssh runtime probes home and uid, then docker, and maps its failures", 
     return { code: next.code, stdout: Buffer.from(next.stdout), stderr: next.stderr };
   };
   answers.push({ code: 0, stdout: "/home/u\n1000\n", stderr: "" });
+  answers.push({ code: 0, stdout: "28.1.1\n", stderr: "" });
   assert.equal(await rt.probe(run), null);
   assert.equal(calls.length, 2);
   assert.match(calls[0].at(-1)!, /printf "%s\\n" "\$HOME"; id -u; mkdir -p "\$HOME\/\.threebot-desktop\/vnc"; chmod 700 "\$HOME\/\.threebot-desktop\/vnc"/);
-  assert.deepEqual(calls[1].slice(-2), ["docker", "'info'"]);
+  assert.deepEqual(calls[1].slice(-4), ["docker", "'info'", "'--format'", "'{{.ServerVersion}}'"]);
+  assert.equal(rt.label(), "Docker 28.1.1");
   // the screen folder is bind-mounted from the probed home, with the hardening flags and no socket publishing
   const started = rt.runArgs({ image: "img", hash: "h", screens: 2, socketDir: "/x" });
   assert.ok(!started.includes("--publish-socket"));
@@ -398,8 +400,29 @@ test("the runtime table: each runtime parses its own inspect output and shapes i
   assert.equal(rt.running(null), false);
   assert.deepEqual(appleRuntime.buildArgs("img", "/dir"), { args: ["build", "-t", "img", "/dir"] });
   assert.deepEqual(rt.buildArgs("img", "/dir"), { args: ["build", "-t", "img", "-"], stdinFrom: "/dir" });
+  assert.deepEqual(appleRuntime.buildArgs("img", "/dir", true), { args: ["build", "--pull", "--no-cache", "-t", "img", "/dir"] });
+  assert.deepEqual(rt.buildArgs("img", "/dir", true), { args: ["build", "--pull", "--no-cache", "-t", "img", "-"], stdinFrom: "/dir" });
   assert.deepEqual(appleRuntime.removeArgs(), ["delete", "--force", "threebot-desktop"]);
   assert.deepEqual(rt.removeArgs(), ["rm", "-f", "threebot-desktop"]);
+  assert.deepEqual(appleRuntime.volumeRemoveArgs("vol"), ["volume", "delete", "vol"]);
+  assert.deepEqual(rt.volumeRemoveArgs("vol"), ["volume", "rm", "vol"]);
+});
+
+test("probe records a short runtime label", async () => {
+  const answers: { code: number; stdout: string }[] = [];
+  const run: Run = async () => {
+    const next = answers.shift() ?? { code: 0, stdout: "" };
+    return { code: next.code, stdout: Buffer.from(next.stdout), stderr: "" };
+  };
+  answers.push({ code: 0, stdout: "" }, { code: 0, stdout: "container CLI version 0.9.0 (build: release, commit: 3e49dce)\n" });
+  assert.equal(await appleRuntime.probe(run), null);
+  assert.equal(appleRuntime.label(), "container 0.9.0");
+  answers.length = 0;
+  answers.push({ code: 0, stdout: "" }, { code: 0, stdout: "" });
+  await appleRuntime.probe(run);
+  assert.equal(appleRuntime.label(), "Apple container");
+  const rt = sshDockerRuntime({ host: "box", controlPath: "/run/cm" });
+  assert.equal(rt.label(), null);
 });
 
 /** A fake Docker host behind ssh: every call must arrive as one quoted ssh line, and the image is built once. */
@@ -533,4 +556,202 @@ test("computerSetting accepts the default, mac and an ssh host, and rejects the 
   bad({ where: "ssh" }); bad({ where: "ssh", host: "" }); bad({ where: "ssh", host: "a b" });
   bad({ where: "ssh", host: "-box" }); bad({ where: "ssh", host: "a".repeat(254) }); bad({ where: "ssh", host: 7 });
   bad({ where: "cluster" }); bad("box"); bad(true);
+});
+
+// ---------- update, reset and the computer status ----------
+
+/** A fake Apple `container` for the maintenance tests: records verbs, tracks the container (by its run label), the image and its build time. */
+function fakeLifecycle(png: Buffer, options: { builtAt?: string; failBuild?: boolean; holdBuild?: boolean; volumeError?: string } = {}) {
+  const calls: string[][] = [];
+  let container: string | null = null;
+  let image = "built";
+  let builtAt = options.builtAt ?? null;
+  let release: (() => void) | null = null;
+  const gate = options.holdBuild ? new Promise<void>((resolve) => { release = resolve; }) : null;
+  const ok = (stdout: Buffer | string = "") => ({ code: 0, stdout: Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout), stderr: "" });
+  const run: Run = async (args) => {
+    calls.push(args);
+    switch (args[0]) {
+      case "system": return ok();
+      case "--version": return ok("container CLI version 0.9.0\n");
+      case "run": container = args[args.indexOf("--label") + 1]?.split("=")[1] ?? null; return ok();
+      case "delete": container = null; return ok();
+      case "inspect":
+        return container
+          ? ok(JSON.stringify([{ status: "running", configuration: { labels: { "threebot.desktop": container } } }]))
+          : { code: 1, stdout: Buffer.alloc(0), stderr: "no such container" };
+      case "image":
+        return args[1] === "inspect"
+          ? image ? ok(JSON.stringify([{ Created: builtAt }])) : { code: 1, stdout: Buffer.alloc(0), stderr: "no such image" }
+          : ok();
+      case "build":
+        if (gate) await gate;
+        if (options.failBuild) return { code: 1, stdout: Buffer.alloc(0), stderr: "pull access denied for base" };
+        image = "rebuilt"; builtAt = new Date().toISOString();
+        return ok();
+      case "volume":
+        return options.volumeError ? { code: 1, stdout: Buffer.alloc(0), stderr: options.volumeError } : ok();
+      case "exec": return args.includes("sh") ? ok(png) : ok();
+      default: return ok();
+    }
+  };
+  return {
+    run, calls,
+    get container() { return container; },
+    get image() { return image; },
+    get builtAt() { return builtAt; },
+    set builtAt(value: string | null) { builtAt = value; },
+    setContainer(hash: string | null) { container = hash; },
+    releaseBuild: () => release?.(),
+  };
+}
+
+async function lifecycleSetup(t: { after: (fn: () => Promise<void>) => void }, options: Parameters<typeof fakeLifecycle>[1] = {}, wrap?: (base: Run) => Run) {
+  const root = await mkdtemp(path.join(tmpdir(), "desktop-maint-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const imageDir = path.join(root, "image");
+  await mkdir(imageDir);
+  await writeFile(path.join(imageDir, "Dockerfile"), "FROM scratch\n");
+  const png = await sharp({ create: { width: 1920, height: 1200, channels: 3, background: "#ccc" } }).png().toBuffer();
+  const fake = fakeLifecycle(png, options);
+  const desktop = createDesktop({ imageDir, socketDir: path.join(root, "vnc"), run: wrap ? wrap(fake.run) : fake.run, screens: 2, idleMs: 60_000 });
+  return { desktop, fake, imageDir };
+}
+
+/** Polls until the detached rebuild has landed, one way or the other (its final removal waits out the browser grace). */
+async function untilSettled(desktop: Desktop) {
+  for (let i = 0; i < 500; i++) {
+    const state = desktop.status(null).state;
+    if (state !== "building" && state !== "stopping") return;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  assert.fail("the rebuild never settled");
+}
+
+test("update rebuilds with --pull --no-cache and drops the container only after the build succeeds", async (t) => {
+  const { desktop, fake, imageDir } = await lifecycleSetup(t, { holdBuild: true });
+  await desktop.enable();
+  await desktop.wake();
+  const current = await imageHash(imageDir);
+  assert.equal(fake.container, current);
+  const status = await desktop.update();
+  assert.equal(status.state, "building");
+  assert.equal(status.runtime, "container 0.9.0");
+  assert.equal(status.image.current, `threebot-desktop:${current}`);
+  const build = fake.calls.find((c) => c[0] === "build")!;
+  assert.deepEqual(build, ["build", "--pull", "--no-cache", "-t", `threebot-desktop:${current}`, imageDir]);
+  assert.equal(fake.container, current);
+  fake.releaseBuild();
+  await untilSettled(desktop);
+  assert.equal(desktop.status(null).state, "stopped");
+  assert.equal(fake.container, null);
+  assert.ok(fake.calls.findIndex((c) => c[0] === "build") < fake.calls.findLastIndex((c) => c[0] === "delete"));
+  const after = await desktop.computerStatus();
+  assert.equal(after.image.running, null);
+  assert.equal(after.image.builtAt, fake.builtAt);
+  assert.equal(after.image.latest, true);
+  await desktop.disable();
+});
+
+test("a failed update keeps the old container and image and says why", async (t) => {
+  const { desktop, fake, imageDir } = await lifecycleSetup(t, { failBuild: true, builtAt: new Date(Date.now() - 30 * 24 * 3600_000).toISOString() });
+  await desktop.enable();
+  await desktop.wake();
+  const current = await imageHash(imageDir);
+  await desktop.update();
+  await untilSettled(desktop);
+  assert.equal(desktop.status(null).state, "failed");
+  assert.match(desktop.status(null).reason!, /image build failed/);
+  assert.equal(fake.container, current);
+  assert.equal(fake.image, "built");
+  const after = await desktop.computerStatus();
+  assert.equal(after.image.running, `threebot-desktop:${current}`);
+  assert.equal(after.image.latest, false);
+  await desktop.disable();
+});
+
+test("reset removes the container, and the volumes only with erase", async (t) => {
+  const { desktop, fake } = await lifecycleSetup(t);
+  await desktop.enable();
+  await desktop.wake();
+  const volumes = () => fake.calls.filter((c) => c[0] === "volume");
+  await desktop.reset({ erase: false });
+  assert.equal(desktop.status(null).state, "stopped");
+  assert.equal(fake.container, null);
+  assert.deepEqual(volumes(), []);
+  await desktop.wake();
+  await desktop.reset({ erase: true });
+  assert.equal(desktop.status(null).state, "stopped");
+  assert.deepEqual(volumes(), [
+    ["volume", "delete", "threebot-desktop-home"],
+    ["volume", "delete", "threebot-desktop-workspace"],
+  ]);
+  await desktop.disable();
+});
+
+test("reset tolerates a volume that is already gone", async (t) => {
+  const { desktop } = await lifecycleSetup(t, { volumeError: "Error: volume not found" });
+  await desktop.enable();
+  await desktop.wake();
+  await desktop.reset({ erase: true });
+  assert.equal(desktop.status(null).state, "stopped");
+  await desktop.disable();
+});
+
+test("update and reset refuse while a person controls a screen", async (t) => {
+  const { desktop } = await lifecycleSetup(t);
+  await desktop.enable();
+  await desktop.wake();
+  const release = desktop.takeControl("alpha");
+  const refused = (error: unknown) => (error as { status?: number }).status === 409 && /Hand the screen back first/.test((error as Error).message);
+  await assert.rejects(desktop.update(), refused);
+  await assert.rejects(desktop.reset({ erase: false }), refused);
+  release();
+  await desktop.disable();
+});
+
+test("update waits out a running Bot batch instead of failing", async (t) => {
+  let releaseBatch!: () => void;
+  const gate = new Promise<void>((resolve) => { releaseBatch = resolve; });
+  const { desktop, fake } = await lifecycleSetup(t, { holdBuild: true }, (base) => async (args, options) => {
+    if (args.includes("xdotool")) await gate;
+    return base(args, options);
+  });
+  await desktop.enable();
+  await desktop.wake();
+  const batch = desktop.actions("alpha", [{ type: "click", x: 10, y: 10 }]);
+  await new Promise((r) => setTimeout(r, 50));
+  const updating = desktop.update();
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(desktop.status(null).state, "building");
+  releaseBatch();
+  await batch;
+  assert.equal((await updating).state, "building");
+  fake.releaseBuild();
+  await untilSettled(desktop);
+  assert.equal(desktop.status(null).state, "stopped");
+  await desktop.disable();
+});
+
+test("latest means the running tag matches the current one and the image is under 7 days old", async (t) => {
+  const builtAt = new Date(Date.now() - 30 * 24 * 3600_000).toISOString();
+  const { desktop, fake, imageDir } = await lifecycleSetup(t, { builtAt });
+  await desktop.enable();
+  const current = await imageHash(imageDir);
+  let status = await desktop.computerStatus();
+  assert.equal(status.image.current, `threebot-desktop:${current}`);
+  assert.equal(status.image.running, null);
+  assert.equal(status.image.builtAt, builtAt);
+  assert.equal(status.image.latest, false);
+  fake.setContainer(current);
+  status = await desktop.computerStatus();
+  assert.equal(status.image.running, `threebot-desktop:${current}`);
+  assert.equal(status.image.latest, false);
+  fake.builtAt = new Date().toISOString();
+  status = await desktop.computerStatus();
+  assert.equal(status.image.latest, true);
+  fake.setContainer("stale");
+  status = await desktop.computerStatus();
+  assert.equal(status.image.latest, false);
+  await desktop.disable();
 });

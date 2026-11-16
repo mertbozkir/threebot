@@ -1,5 +1,5 @@
 import type { CloudTranscription, CloudTranscriptionPatch } from "./cloudSpeech";
-import type { AdoptableProject, Bot, Machine, Settings, ThreadMeta, ThreadPreview } from "./types";
+import type { AdoptableProject, Bot, ComputerStatus, Machine, Settings, ThreadMeta, ThreadPreview } from "./types";
 
 type Session = { authenticated: boolean; passwordRequired: boolean; accessLogin: boolean };
 
@@ -63,6 +63,9 @@ export const api = {
   desktop: (slug: string) => req<DesktopStatus>(`/api/desktop/${encodeURIComponent(slug)}`),
   wakeDesktop: (slug: string) => req<DesktopStatus>(`/api/desktop/${encodeURIComponent(slug)}/wake`, { method: "POST", body: "{}" }),
   typeDesktop: (slug: string, text: string) => req<{ ok: true }>(`/api/desktop/${encodeURIComponent(slug)}/type`, { method: "POST", body: JSON.stringify({ text }) }),
+  computerStatus: () => req<ComputerStatus>("/api/computer"),
+  computerUpdate: () => req<ComputerStatus>("/api/computer/update", { method: "POST", body: "{}" }),
+  computerReset: (erase: boolean) => req<ComputerStatus>("/api/computer/reset", { method: "POST", body: JSON.stringify({ erase }) }),
   machines: (fresh = false) => req<{ machines: Machine[]; linksSupported: boolean }>(`/api/machines${fresh ? "?fresh=1" : ""}`),
   pairMachine: (environmentId: string, code: string, url?: string) => req<{ environmentId: string; baseUrl: string }>(`/api/machines/${encodeURIComponent(environmentId)}/pair`, { method: "POST", body: JSON.stringify({ code, ...(url ? { url } : {}) }) }),
   unpairMachine: (environmentId: string) => req<unknown>(`/api/machines/${encodeURIComponent(environmentId)}/pair`, { method: "DELETE" }),
