@@ -9,7 +9,7 @@ import { ModelPicker } from "./ModelPicker";
 import { VaultPane } from "./Vault";
 import { ConnectApps } from "./ConnectApps";
 import { IconButton, Modal, Pill, Spinner, Switch } from "./ui";
-import { Group, H, Row } from "./SettingsParts";
+import { Group, Row, Select } from "./SettingsParts";
 import { RemoteAccessPane, UpdatesPane, useUpdateNotice } from "./RemoteAccess";
 import { UsageStatsPane } from "./UsageStats";
 import { MachinesPane } from "./MachinesPane";
@@ -23,17 +23,17 @@ import { cloudTranscription, PROVIDER_LABELS, saveCloudTranscription, type Cloud
 import { useVoiceSettings, voiceLanguageOptions } from "./VoiceDock";
 
 const PANES = [
-  { id: "general", label: "General", icon: <Gear size={15} /> },
-  { id: "bots", label: "Bots", icon: <BotIcon size={15} /> },
-  { id: "appearance", label: "Appearance", icon: <Palette size={15} /> },
-  { id: "computer", label: "Computer", icon: <Monitor size={15} /> },
-  { id: "machines", label: "Machines", icon: <Network size={15} /> },
-  { id: "permissions", label: "Permissions", icon: <Shield size={15} /> },
-  { id: "vault", label: "Vault", icon: <Vault size={15} /> },
-  { id: "access", label: "Remote access", icon: <Globe size={15} /> },
-  { id: "updates", label: "Updates", icon: <Download size={15} /> },
-  { id: "beta", label: "Beta", icon: <FlaskConical size={15} /> },
-  { id: "usage-stats", label: "Usage stats", icon: <Activity size={15} /> },
+  { id: "general", label: "General", icon: <Gear size={16} /> },
+  { id: "bots", label: "Bots", icon: <BotIcon size={16} /> },
+  { id: "appearance", label: "Appearance", icon: <Palette size={16} /> },
+  { id: "computer", label: "Computer", icon: <Monitor size={16} /> },
+  { id: "machines", label: "Machines", icon: <Network size={16} /> },
+  { id: "permissions", label: "Permissions", icon: <Shield size={16} /> },
+  { id: "vault", label: "Vault", icon: <Vault size={16} /> },
+  { id: "access", label: "Remote access", icon: <Globe size={16} /> },
+  { id: "updates", label: "Updates", icon: <Download size={16} /> },
+  { id: "beta", label: "Beta", icon: <FlaskConical size={16} /> },
+  { id: "usage-stats", label: "Usage stats", icon: <Activity size={16} /> },
 ];
 
 type SaveSettings = (patch: Partial<Settings>) => Promise<boolean>;
@@ -71,11 +71,11 @@ export function SettingsDialog() {
           <nav aria-label="Settings categories" className="settings-nav scroll-thin flex shrink-0 gap-1 overflow-x-auto border-b border-line p-2 pr-12 sm:block sm:w-[200px] sm:overflow-visible sm:border-r sm:border-b-0 sm:p-3">
             {PANES.map((p) => (
               <button key={p.id} onClick={() => navigatePane(p.id)} aria-current={pane === p.id ? "page" : undefined}
-                className={clsx("flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] sm:w-full", pane === p.id ? "bg-active" : "hover:bg-hover")}>
+                className={clsx("flex h-9 shrink-0 items-center gap-2.5 rounded-[10px] px-2.5 text-[14px] sm:w-full", pane === p.id ? "bg-active" : "hover:bg-hover")}>
                 <span className="text-muted">{p.icon}</span>{p.label}
               </button>
             ))}
-            <button onClick={() => setApps(true)} className="flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] hover:bg-hover sm:w-full"><Plug size={15} className="text-muted" />Connect apps</button>
+            <button onClick={() => setApps(true)} className="flex h-9 items-center gap-2.5 rounded-[10px] px-2.5 text-[14px] hover:bg-hover sm:w-full"><Plug size={16} className="text-muted" />Connect apps</button>
           </nav>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {pending && <div role="status" className="shrink-0 px-4 py-2 text-[13px] text-muted">Saving…</div>}
@@ -125,7 +125,7 @@ function SettingsHome({ s, onApps, onSkills, onPane: pane }: { s: Settings; onAp
   };
   return <div className="settings-home pt-16">
     <Group>
-      <button onClick={() => pane("account")} className="settings-home-row flex w-full items-center gap-3 border-b border-line px-4 py-5 text-left"><span className="grid size-10 shrink-0 place-items-center rounded-full border border-line-strong bg-app text-[18px] font-semibold">{(s.userName || "You")[0].toUpperCase()}</span><span className="min-w-0 flex-1"><span className="block text-[17px]">{s.userName || "You"}</span><span className="block text-[13px] text-muted">Account</span></span><ChevronRight size={20} className="text-muted" /></button>
+      <button onClick={() => pane("account")} className="settings-home-row flex w-full items-center gap-3 px-5 py-4 text-left"><span className="grid size-10 shrink-0 place-items-center rounded-full border border-line-strong bg-app text-[18px] font-semibold">{(s.userName || "You")[0].toUpperCase()}</span><span className="min-w-0 flex-1"><span className="block text-[14.5px]">{s.userName || "You"}</span><span className="mt-0.5 block text-[13px] text-muted">Account</span></span><ChevronRight size={20} className="shrink-0 text-muted" /></button>
       <SettingsHomeLink title="Usage" detail={usagePeak === null ? undefined : `${usagePeak}%`} onClick={() => pane("usage")} />
       <SettingsHomeLink title="Vault" description="Logins and contact info your Bots can use" onClick={() => pane("vault")} />
     </Group>
@@ -141,9 +141,7 @@ function SettingsHome({ s, onApps, onSkills, onPane: pane }: { s: Settings; onAp
     </Group>
     <Group title="Voice">
       <Row title="Voice language" desc="Used for dictation and voice calls.">
-        <select aria-label="Voice language" value={voiceSettings.lang} onChange={(e) => saveVoiceSettings({ lang: e.target.value, voice: null })} className="h-8 rounded-lg border border-line bg-elevated px-2 text-[13px] outline-none">
-          {voiceLanguageOptions().map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-        </select>
+        <Select label="Voice language" value={voiceSettings.lang} onChange={(lang) => saveVoiceSettings({ lang, voice: null })} options={voiceLanguageOptions()} />
       </Row>
       <T3DictationRow />
     </Group>
@@ -155,18 +153,7 @@ function SettingsHome({ s, onApps, onSkills, onPane: pane }: { s: Settings; onAp
 }
 
 function SettingsHomeLink({ title, description, detail, onClick, disabled = false }: { title: string; description?: string; detail?: string; disabled?: boolean; onClick: () => void }) {
-  return <button disabled={disabled} onClick={onClick} className="settings-home-row flex w-full items-center gap-3 border-b border-line px-4 py-4 text-left last:border-0 hover:bg-hover"><span className="min-w-0 flex-1"><span className="block text-[17px]">{title}</span>{description && <span className="mt-1 block text-[13px] leading-5 text-muted">{description}</span>}</span>{detail && <span className="min-w-0 truncate text-[14px] text-muted">{detail}</span>}<ChevronRight size={18} className="shrink-0 text-muted" /></button>;
-}
-
-function Select<T extends string>({ label, value, onChange, options }: { label: string; value: T; onChange: (v: T) => void; options: readonly (readonly [T, string])[] }) {
-  return (
-    <select aria-label={label} value={value} onChange={(e) => {
-      const option = options.find(([value]) => value === e.target.value);
-      if (option) onChange(option[0]);
-    }} className="h-8 rounded-lg border border-line bg-elevated px-2 text-[13px] outline-none">
-      {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-    </select>
-  );
+  return <button disabled={disabled} onClick={onClick} className="settings-home-row flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-hover"><span className="min-w-0 flex-1"><span className="block text-[14.5px]">{title}</span>{description && <span className="mt-0.5 block text-[13px] leading-5 text-muted">{description}</span>}</span>{detail && <span className="min-w-0 truncate text-[14px] text-muted">{detail}</span>}<ChevronRight size={18} className="shrink-0 text-muted" /></button>;
 }
 
 function General({ s, accountOnly = false }: { s: Settings; accountOnly?: boolean }) {
@@ -182,10 +169,9 @@ function General({ s, accountOnly = false }: { s: Settings; accountOnly?: boolea
   };
   return (
     <>
-      <H>{accountOnly ? "Account" : "General"}</H>
       <Group title="Account">
         <Row title="Your name" desc="Your Bots use it when they talk to you.">
-          <input aria-label="Your name" value={name} onChange={(e) => setName(e.target.value)} onBlur={saveName} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { e.stopPropagation(); setName(s.userName); } }} placeholder="Enter your name" className="h-8 w-48 rounded-lg border border-line bg-elevated px-2.5 text-[13px] outline-none" />
+          <input aria-label="Your name" value={name} onChange={(e) => setName(e.target.value)} onBlur={saveName} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { e.stopPropagation(); setName(s.userName); } }} placeholder="Enter your name" className="settings-input w-48" />
         </Row>
       </Group>
       {!accountOnly && <Group title="Bot">
@@ -249,7 +235,7 @@ function CloudDictationRows() {
     </Row>
     {provider && <Row title={`${PROVIDER_LABELS[provider]} API key`} desc={state.hasKey[provider] ? "Saved and encrypted on the gateway. Paste a new one to replace it." : `Paste a key from ${provider === "openai" ? "platform.openai.com" : "aistudio.google.com"} to turn this on.`}>
       <form className="flex items-center gap-2" onSubmit={(event) => { event.preventDefault(); if (!key.trim()) return; void apply({ apiKey: { provider, value: key }, provider }).then((ok) => { if (ok) setKey(""); }); }}>
-        <input type="password" autoComplete="off" aria-label={`${PROVIDER_LABELS[provider]} API key`} value={key} onChange={(event) => setKey(event.target.value)} placeholder={state.hasKey[provider] ? "••••••••" : "API key"} className="h-8 w-44 rounded-lg border border-line bg-elevated px-2.5 text-[13px] outline-none" />
+        <input type="password" autoComplete="off" aria-label={`${PROVIDER_LABELS[provider]} API key`} value={key} onChange={(event) => setKey(event.target.value)} placeholder={state.hasKey[provider] ? "••••••••" : "API key"} className="settings-input w-44" />
         <button type="submit" disabled={busy || !key.trim()} className="text-[12.5px] text-muted hover:text-fg disabled:opacity-50">Save</button>
         {state.hasKey[provider] && state.provider !== provider && <button type="button" disabled={busy} className="text-[12.5px] text-muted hover:text-fg" onClick={() => void apply({ apiKey: { provider, value: "" } })}>Remove</button>}
       </form>
@@ -328,16 +314,16 @@ function RuleList({ title, desc, rules, onChange }: { title: string; desc: strin
     <div className="mb-6">
       <div className="mb-2 flex items-end gap-3">
         <div className="flex-1">
-          <div className="text-[13.5px]">{title}</div>
-          <div className="text-[12.5px] text-muted">{desc}</div>
+          <div className="text-[14.5px]">{title}</div>
+          <div className="text-[13px] text-muted">{desc}</div>
         </div>
         <Pill variant="soft" onClick={() => { setAdding(true); setEditing(null); setDraft(""); }} disabled={rules.length >= 20}>
           Add Rule
         </Pill>
       </div>
-      <div className="settings-rules-card overflow-hidden rounded-2xl bg-card">
-        {rules.length === 0 && <p className="px-4 py-4 text-muted">No rules yet</p>}
-        {rules.map((r, i) => <div key={i} className="group flex items-center gap-2 border-b border-line px-4 py-4 text-[15px] last:border-0"><span className="settings-rule-text min-w-0 flex-1">{r}</span><IconButton className="settings-rule-actions" onClick={() => { setEditing(i); setDraft(r); setAdding(false); }} aria-label="Edit rule"><Pencil size={14} /></IconButton><IconButton className="settings-rule-actions" onClick={() => onChange(rules.filter((_, j) => j !== i))} aria-label="Delete rule"><Trash2 size={14} /></IconButton></div>)}
+      <div className="settings-rules-card overflow-hidden rounded-[18px] border border-line bg-card">
+        {rules.length === 0 && <p className="px-5 py-3.5 text-muted">No rules yet</p>}
+        {rules.map((r, i) => <div key={i} className="group flex items-center gap-2 px-5 py-3.5 text-[14.5px]"><span className="settings-rule-text min-w-0 flex-1">{r}</span><IconButton className="settings-rule-actions" onClick={() => { setEditing(i); setDraft(r); setAdding(false); }} aria-label="Edit rule"><Pencil size={14} /></IconButton><IconButton className="settings-rule-actions" onClick={() => onChange(rules.filter((_, j) => j !== i))} aria-label="Delete rule"><Trash2 size={14} /></IconButton></div>)}
       </div>
       {(adding || editing !== null) && <Modal title={editing === null ? "New Rule" : "Edit Rule"} onBack={() => { setAdding(false); setEditing(null); }} onClose={() => { setAdding(false); setEditing(null); }} className="rule-editor-sheet w-[460px]">
         <RuleEditor placeholder={title === "Always Ask" ? "Purchases over $50" : "Emails to my team at acme.com"} draft={draft} setDraft={setDraft} commit={commit} cancel={() => { setAdding(false); setEditing(null); }} />
@@ -420,7 +406,7 @@ function useEnvironment() {
 }
 
 function EnvironmentError({ retry }: { retry: () => void }) {
-  return <div role="alert" className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-line p-3 text-[13px] text-muted"><span className="flex-1">Couldn't load computer information.</span><Pill variant="soft" onClick={retry}>Retry</Pill></div>;
+  return <div role="alert" className="mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-danger/10 p-3.5 text-[13px] text-danger"><span className="flex-1">Couldn't load computer information.</span><Pill variant="soft" onClick={retry}>Retry</Pill></div>;
 }
 
 function Computer() {
@@ -429,7 +415,6 @@ function Computer() {
   const connection = useApp((s) => s.connection);
   return (
     <>
-      <H>Computer</H>
       {state.kind === "error" && <EnvironmentError retry={retry} />}
       <Group title="Bot's computer">
         <Row title={state.kind === "ready" ? state.value.label : "Server"} desc="All your Bots share this computer: its files, browser and sign-ins.">
@@ -448,20 +433,19 @@ function BotsPane() {
   const list = Object.values(bots).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   return (
     <>
-      <H>Bots</H>
       <Group>
-        <button onClick={() => openDialog("adopt-project")} className="settings-adopt flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-hover">
+        <button onClick={() => openDialog("adopt-project")} className="settings-adopt flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-hover">
           <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-active"><FolderGit2 size={17} /></span>
-          <span className="min-w-0 flex-1"><span className="block text-[13.5px]">Make a Bot from a project</span><span className="mt-0.5 block text-[12.5px] text-muted">Pick one of this computer's T3 projects. The Bot works in its folder, and git never sees its files.</span></span>
+          <span className="min-w-0 flex-1"><span className="block text-[14.5px]">Make a Bot from a project</span><span className="mt-0.5 block text-[13px] text-muted">Pick one of this computer's T3 projects. The Bot works in its folder, and git never sees its files.</span></span>
           <ChevronRight size={18} className="shrink-0 text-muted" />
         </button>
       </Group>
       <Group title="Your Bots">
         {list.length === 0 ? <Row title="No Bots yet" /> : list.map((bot) => (
-          <div key={bot.slug} className="settings-bot-row flex items-center gap-3 border-b border-line px-4 py-3 last:border-0">
+          <div key={bot.slug} className="settings-bot-row flex items-center gap-3 px-5 py-3">
             <span className="grid size-8 shrink-0 place-items-center overflow-hidden"><Avatar shape={bot.shape} color={bot.color} picture={bot.avatarImage} size={32} /></span>
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 text-[13.5px]"><span className="truncate">{bot.name}</span>{bot.adopted && <span className="shrink-0 rounded-full bg-active px-2 py-0.5 text-[11.5px] text-muted">From a project</span>}</div>
+              <div className="flex items-center gap-2 text-[14.5px]"><span className="truncate">{bot.name}</span>{bot.adopted && <span className="shrink-0 rounded-full bg-active px-2 py-0.5 text-[11.5px] text-muted">From a project</span>}</div>
               <div className="mt-0.5 truncate font-mono text-[12px] text-muted" title={bot.workspaceRoot}>{bot.workspaceRoot}</div>
             </div>
             {bot.adopted && <Pill variant="soft" onClick={() => openDialog({ kind: "delete-bot", slug: bot.slug })}>Turn back into a plain project</Pill>}
