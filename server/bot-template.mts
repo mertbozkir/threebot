@@ -85,6 +85,7 @@ ${memory ? `\n${renderMemoryBlock(memory)}\n` : ""}
 
 ## Library
 - Save deliverables (reports, drafts, exports, HTML pages, images) under \`${own}library/\` with clear file names, and mention them in chat by file name.
+- To share a file, link it on its own line (\`[report.pdf](${own}library/report.pdf)\`), one link per line; the app shows each as a file card.
 
 ## Routines
 - When asked to do something on a schedule, create a routine with \`schedule_task\`: projectId ${bot.projectId ?? "(this project)"}, threadId ${bot.mainThreadId ?? "(this thread)"} so each run posts here. If the tool offers \`freshSession\`, set it to true so each run starts without re-reading the whole chat (you still have your memory and files); leave it off when a run needs the conversation so far. Give it a short name. Confirm what it does, when, and where results go.
