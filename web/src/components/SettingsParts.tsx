@@ -2,10 +2,6 @@ import type React from "react";
 import clsx from "clsx";
 import { ChevronDown } from "lucide-react";
 
-export function H({ children }: { children: React.ReactNode }) {
-  return <h2 className="mb-5 text-[20px] font-medium">{children}</h2>;
-}
-
 export function Group({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
     <div className="settings-group mb-6">

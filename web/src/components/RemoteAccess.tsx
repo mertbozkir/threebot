@@ -5,7 +5,7 @@ import { api, type AccessState, type ReleaseInfo, type SystemInfo, type UpdateNo
 import { timeAgo } from "../lib/projects";
 import { openDialog, toast, useApp } from "../store";
 import { ReleaseNotesView } from "./ReleaseNotes";
-import { Group, H, Row } from "./SettingsParts";
+import { Group, Row } from "./SettingsParts";
 import { IconButton, Pill, Spinner, Switch } from "./ui";
 
 const ACCESS_GUIDE = "https://github.com/RokaSwK/threebot/blob/main/docs/cloudflare-access.md";
@@ -45,7 +45,7 @@ export function RemoteAccessPane() {
     finally { setBusy(null); }
   };
 
-  if (!state) return <><H>Remote access</H>{error ? <p role="alert" className="text-[13px] text-danger">{error}</p> : <div role="status" className="grid h-24 place-items-center"><Spinner /></div>}</>;
+  if (!state) return <>{error ? <p role="alert" className="text-[13px] text-danger">{error}</p> : <div role="status" className="grid h-24 place-items-center"><Spinner /></div>}</>;
   const ts = state.tailscale, tunnel = state.tunnel;
 
   let tsDesc: React.ReactNode, tsAction: React.ReactNode = null;
@@ -63,9 +63,8 @@ export function RemoteAccessPane() {
   }
 
   return <>
-    <H>Remote access</H>
     <p className="mb-5 text-[13px] leading-5 text-muted">Open Threebot on your phone and other computers. Tailscale keeps it private to your own devices. A Cloudflare link works from anywhere and asks for a password.</p>
-    {error && <p role="alert" className="mb-4 text-[13px] text-danger">{error}</p>}
+    {error && <p role="alert" className="mb-4 rounded-xl bg-danger/10 px-3.5 py-3 text-[13px] text-danger">{error}</p>}
     <Group title="Private · Tailscale">
       <Row title="Tailscale" desc={tsDesc}>
         {tsAction}
@@ -80,7 +79,7 @@ export function RemoteAccessPane() {
     <Group title="Public link · Cloudflare">
       <Row title="Password" desc={state.password.fromEnv ? "Set by BOT_PASSWORD in .env." : state.password.set ? "Set. Changing it signs out every other device." : "Anyone with a public link sees the sign-in page first, so set a password before turning one on."}>
         {!state.password.fromEnv && <form className="flex shrink-0 items-center gap-2" onSubmit={(e) => { e.preventDefault(); const value = password; setPassword(""); void act("password", () => api.setPassword(value)); }}>
-          <input type="password" autoComplete="new-password" aria-label={state.password.set ? "New password" : "Password"} placeholder={state.password.set ? "New password" : "Password"} minLength={8} required value={password} onChange={(e) => setPassword(e.target.value)} className="h-8 w-40 rounded-lg border border-line bg-elevated px-2.5 text-[13px] outline-none" />
+          <input type="password" autoComplete="new-password" aria-label={state.password.set ? "New password" : "Password"} placeholder={state.password.set ? "New password" : "Password"} minLength={8} required value={password} onChange={(e) => setPassword(e.target.value)} className="settings-input w-40" />
           <Pill type="submit" variant="soft" disabled={busy !== null || password.length < 8}>{busy === "password" ? "Saving…" : "Save"}</Pill>
         </form>}
       </Row>
@@ -89,7 +88,7 @@ export function RemoteAccessPane() {
           ? <Pill variant="soft" disabled={busy !== null} onClick={() => void act("tunnel", () => api.tunnel(false))}>{busy === "tunnel" ? "Turning off…" : "Turn off"}</Pill>
           : <Pill disabled={busy !== null || !state.password.set} title={state.password.set ? undefined : "Set a password first"} onClick={() => void act("tunnel", () => api.tunnel(true))}>{busy === "tunnel" ? (tunnel.available ? "Starting…" : "Downloading cloudflared…") : "Turn on"}</Pill>}
       </Row>
-      {tunnel.url && <div className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Anyone with this link sees the sign-in page.<Address url={tunnel.url} /></div>}
+      {tunnel.url && <div className="px-5 pb-3.5 text-[12.5px] text-muted">Anyone with this link sees the sign-in page.<Address url={tunnel.url} /></div>}
     </Group>
   </>;
 }
@@ -253,8 +252,7 @@ export function UpdatesPane({ t3 }: { t3: React.ReactNode }) {
     : "Installs new releases when no Bot is working or waiting on you, and restarts Threebot.";
 
   return <>
-    <H>Updates</H>
-    {error && <p role="alert" className="mb-4 text-[13px] text-danger">{error}</p>}
+    {error && <p role="alert" className="mb-4 rounded-xl bg-danger/10 px-3.5 py-3 text-[13px] text-danger">{error}</p>}
     <Group>
       <Row title="Threebot" desc={desc}>
         {updating ? <Spinner /> : <span className="flex shrink-0 items-center gap-3">
