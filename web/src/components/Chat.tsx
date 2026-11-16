@@ -1,4 +1,4 @@
-import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentPropsWithoutRef } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentPropsWithoutRef } from "react";
 import clsx from "clsx";
 import { defaultUrlTransform, type ExtraProps } from "react-markdown";
 import { ArrowDown, ArrowUp, AudioLines, Camera, ChevronLeft, Eraser, Globe, FileText, Folder, Image, MessageCircle, Mic, Monitor, PanelRight, Plus, Square, X } from "lucide-react";
@@ -318,6 +318,7 @@ export function BotBubble({ text, threadId, itemId, runId, onReply }: { text: st
   return (
     <ChatMessageActions text={text} threadId={threadId} itemId={itemId} runId={runId} onReply={onReply} side="bot">
       <MessageImages>
+        <FileStackContext.Provider value={!!workspace}>
         <div data-message-body="markdown" className="stack-left flex flex-col items-start gap-1">
           {parts.map((p, i) => (
             <div key={i} className="md bubble fade-up rounded-[18px] bg-bubble-bot px-3.5 py-[7px] text-[14px] leading-[22px] break-words">
@@ -326,6 +327,7 @@ export function BotBubble({ text, threadId, itemId, runId, onReply }: { text: st
           ))}
           <MessageFileStack text={text} />
         </div>
+        </FileStackContext.Provider>
       </MessageImages>
     </ChatMessageActions>
   );
@@ -340,11 +342,16 @@ const MessageContent = memo(function MessageContent({ text }: { text: string }) 
   return useMemo(() => <RichMarkdown bots={Object.values(bots).map((b) => ({ slug: b.slug, name: b.name }))} components={{ a: MessageLink, p: MessageParagraph, img: WorkspaceMessageImage }} urlTransform={(url) => parseThreadLink(url) || url.startsWith("bot:") || (workspace && workspaceLinkPath(url, workspace.workspaceRoot, workspace.fromPath)) ? url : defaultUrlTransform(url)}>{text}</RichMarkdown>, [text, referencesKey, workspace]);
 });
 
-/** A paragraph holding nothing but a workspace-file link renders as the file card. */
+/** Set inside a Bot message whose file stack draws every linked file under the text. */
+const FileStackContext = createContext(false);
+
+/** A paragraph holding nothing but a workspace-file link renders as the file card, or nothing when the stack below draws it. */
 function MessageParagraph({ node, children }: ComponentPropsWithoutRef<"p"> & ExtraProps) {
   const workspace = useContext(WorkspaceFileContext);
+  const inStack = useContext(FileStackContext);
   const solo = workspace && node ? soloFileLinkParagraph(node, (href) => workspaceLinkPath(href, workspace.workspaceRoot, workspace.fromPath)) : null;
   if (!solo || !workspace) return <p>{children}</p>;
+  if (inStack) return null;
   const name = solo.text.trim() || solo.path.split("/").at(-1) || solo.path;
   return <DocumentCard name={name} detail={fileTypeLabel(solo.path)} kind={fileGlyphKind(solo.path)} workspacePath={solo.path} onOpen={() => workspace.openFile(solo.path)} />;
 }
