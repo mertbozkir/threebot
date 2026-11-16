@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { FILE_CARD_COLORS, aboutFilePrompt, fileCardAccent, fileTypeLabel, formatSize, soloFileLinkParagraph } from "../src/lib/fileCards.ts";
 
 test("file card accents map file types to their band colors", () => {
-  assert.deepEqual(FILE_CARD_COLORS, { pdf: "#ff3b47", sheet: "#19c46e", doc: "#1d8cff", slides: "#ff9500", other: "#98989d" });
+  assert.deepEqual(FILE_CARD_COLORS, { pdf: "#ff3b47", sheet: "#19c46e", doc: "#1d8cff", slides: "#ff6a13", other: "#98989d" });
   for (const [name, accent] of [
     ["doc.pdf", "pdf"], ["DOC.PDF", "pdf"],
     ["sheet.xlsx", "sheet"], ["old.xls", "sheet"], ["table.csv", "sheet"], ["sheet.ods", "sheet"],

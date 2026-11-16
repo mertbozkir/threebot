@@ -52,7 +52,7 @@ test("CSV tile shows the full file name, compact size and a signed table preview
   const open = button("Open sample.csv");
   assert.equal(open.textContent, "sample.csv27B");
   assert.equal(open.title, "sample.csv");
-  assert.equal(open.querySelector("[data-accent]").getAttribute("data-accent"), "sheet");
+  assert.equal(open.querySelector("[data-glyph]").getAttribute("data-glyph"), "sheet");
   assert.equal(button("Download sample.csv").title, "Download sample.csv");
   await click("Open sample.csv");
   assert.deepEqual([...document.querySelectorAll('[role="dialog"] td')].map((cell) => cell.textContent), ["example", "1"]);
@@ -64,7 +64,7 @@ test("CSV tile shows the full file name, compact size and a signed table preview
 test("the card glyph follows the file type: PDF, spreadsheet, document, slides and everything else", async () => {
   for (const [name, accent] of [["doc.pdf", "pdf"], ["table.xlsx", "sheet"], ["memo.docx", "doc"], ["deck.pptx", "slides"], ["archive.bin", "other"]]) {
     await render([{ id: "typed", name }]);
-    assert.equal(button(`Open ${name}`).querySelector("[data-accent]").getAttribute("data-accent"), accent, name);
+    assert.equal(button(`Open ${name}`).querySelector("[data-glyph]").getAttribute("data-glyph"), accent, name);
   }
 });
 

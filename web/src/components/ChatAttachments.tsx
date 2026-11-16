@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { Download, LoaderCircle } from "lucide-react";
 import { assetUrl } from "../store";
-import { fileCardAccent, fileTypeLabel, formatSize } from "../lib/fileCards";
+import { fileGlyphKind, fileTypeLabel, formatSize } from "../lib/fileCards";
 import { FileCard } from "./FileCard";
 import { workspaceFileKind } from "../lib/workspaceLinks";
 import { WorkspaceResourceViewer } from "./WorkspaceResource";
@@ -111,7 +111,7 @@ function Attachment({ attachment, onOpen }: { attachment: ChatAttachment; onOpen
         {downloadState === "preparing" ? <LoaderCircle size={15} aria-hidden="true" className="animate-spin" /> : <Download size={15} aria-hidden="true" />}
       </button>
     </div>
-      : <FileCard name={name} detail={detail} accent={fileCardAccent(attachment.name)} onOpen={attachment.fileKind === "image" ? open : onOpen} buttonRef={ref}>
+      : <FileCard name={name} detail={detail} kind={fileGlyphKind(attachment.name)} onOpen={attachment.fileKind === "image" ? open : onOpen} buttonRef={ref}>
         <button type="button" onClick={download} disabled={downloadState === "preparing"} aria-label={`Download ${attachment.name}`} title={`Download ${attachment.name}`}
           className="grid size-9 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50">
           {downloadState === "preparing" ? <LoaderCircle size={15} aria-hidden="true" className="animate-spin" /> : <Download size={15} aria-hidden="true" />}
