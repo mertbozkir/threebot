@@ -668,16 +668,21 @@ button {
 .csv-preview th, .csv-preview td { padding: 10px 14px; border: 1px solid var(--border-strong); text-align: left; white-space: nowrap; }
 .csv-preview th { font-weight: 600; background: var(--bg-card); }
 .office-sheet { display: flex; flex-direction: column; height: 100%; }
+.office-hint { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; min-height: 30px; padding: 4px 8px 4px 12px; background: var(--bg-elevated); border-bottom: 1px solid var(--border); font-size: 12.5px; color: var(--fg-muted); }
+.office-hint button { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; color: var(--fg-muted); }
+.office-hint button:hover { background: var(--bg-hover); color: var(--fg); }
 .office-sheet-tabs { display: flex; flex-shrink: 0; gap: 4px; overflow-x: auto; padding: 8px 12px; border-bottom: 1px solid var(--border); }
 .office-sheet-tabs button { flex-shrink: 0; padding: 6px 12px; border-radius: 999px; font-size: 13px; color: var(--fg-muted); white-space: nowrap; }
 .office-sheet-tabs button[aria-selected="true"] { background: var(--bg-active); color: var(--fg); }
 .office-grid { flex: 1; min-height: 0; overflow: auto; }
 .office-grid table { border-collapse: separate; border-spacing: 0; font-size: 13px; line-height: 18px; }
+.office-grid table:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .office-grid th, .office-grid td { padding: 5px 10px; border-right: 1px solid var(--border-strong); border-bottom: 1px solid var(--border-strong); text-align: start; white-space: pre; }
 .office-grid th { position: sticky; z-index: 1; background: var(--bg-elevated); color: var(--fg-muted); font-weight: 500; font-variant-numeric: tabular-nums; }
 .office-grid thead th { top: 0; text-align: center; }
 .office-grid tbody th { inset-inline-start: 0; text-align: end; }
 .office-grid thead th:first-child { inset-inline-start: 0; z-index: 2; }
+.office-grid td[aria-selected="true"] { outline: 2px solid var(--accent); outline-offset: -2px; background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .office-note { flex-shrink: 0; padding: 8px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--fg-muted); }
 .office-doc :is(p, li, h1, h2, h3, h4, h5, h6, td) { white-space: pre-wrap; overflow-wrap: anywhere; }
 .office-doc :is(p, h1, h2, h3, h4, h5, h6):empty::after { content: "\00a0"; }

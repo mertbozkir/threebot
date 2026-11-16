@@ -1,7 +1,18 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import type { DocBlock, DocParagraph, DocRun, DocumentData, Workbook } from "../lib/office";
 
 type Parsed = { kind: "sheet"; workbook: Workbook } | { kind: "doc"; document: DocumentData } | { kind: "refused"; message: string };
+
+function rangeTsv(rows: string[][], top: number, bottom: number, left: number, right: number): string {
+  const lines: string[] = [];
+  for (let r = top; r <= bottom; r++) {
+    const cells: string[] = [];
+    for (let c = left; c <= right; c++) cells.push(rows[r]?.[c] ?? "");
+    lines.push(cells.join("\t"));
+  }
+  return lines.join("\n");
+}
 
 /** Read-only .xlsx and .docx preview. A file the parser refuses explains why; the sheet keeps its original-file link. */
 export default function OfficeDocument({ data, kind, onError, onRows }: { data: ArrayBuffer; kind: "sheet" | "doc"; onError: (error: unknown) => void; onRows?: (count: number, truncated: boolean) => void }) {
@@ -32,21 +43,89 @@ function columnName(index: number) {
   return name;
 }
 
+type Cell = [row: number, column: number];
+type Selection = { anchor: Cell; focus: Cell };
+
+const HINT_COLLAPSED_KEY = "office-sheet-hint-collapsed";
+
+function readHintCollapsed() {
+  try { return localStorage.getItem(HINT_COLLAPSED_KEY) === "1"; } catch { return false; }
+}
+
+function storeHintCollapsed(collapsed: boolean) {
+  try { localStorage.setItem(HINT_COLLAPSED_KEY, collapsed ? "1" : "0"); } catch { /* storage may be unavailable */ }
+}
+
+function copyKeyLabel() {
+  return /Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? "⌘C" : "Ctrl+C";
+}
+
+const ARROW_MOVES: Record<string, [number, number]> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+
 function SheetView({ workbook, onRows }: { workbook: Workbook; onRows?: (count: number, truncated: boolean) => void }) {
   const [index, setIndex] = useState(0);
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const [hintCollapsed, setHintCollapsed] = useState(readHintCollapsed);
   const sheet = workbook.sheets[index];
   useEffect(() => { onRows?.(sheet?.rows.length ?? 0, !!sheet?.truncatedRows); }, [sheet, onRows]);
   if (!sheet) return <p className="p-6 text-center text-[14px] text-muted">This workbook has no sheets to show.</p>;
   const columns = Array.from({ length: sheet.columns }, (_, column) => columnName(column));
   const note = [sheet.truncatedRows && "the first 1,000 rows", sheet.truncatedColumns && "the first 100 columns"].filter(Boolean).join(" and ");
+  const inSelection = (row: number, column: number) => {
+    if (!selection) return false;
+    const top = Math.min(selection.anchor[0], selection.focus[0]);
+    const bottom = Math.max(selection.anchor[0], selection.focus[0]);
+    const left = Math.min(selection.anchor[1], selection.focus[1]);
+    const right = Math.max(selection.anchor[1], selection.focus[1]);
+    return row >= top && row <= bottom && column >= left && column <= right;
+  };
+  const select = (row: number, column: number, extend: boolean) => setSelection((current) => ({
+    anchor: current && extend ? current.anchor : [row, column],
+    focus: [row, column],
+  }));
+  const move = (rowDelta: number, columnDelta: number, extend: boolean) => setSelection((current) => {
+    const base = current?.focus ?? [0, 0];
+    const focus: Cell = [
+      Math.min(Math.max(base[0] + rowDelta, 0), Math.max(sheet.rows.length - 1, 0)),
+      Math.min(Math.max(base[1] + columnDelta, 0), Math.max(sheet.columns - 1, 0)),
+    ];
+    return { anchor: current && extend ? current.anchor : focus, focus };
+  });
+  const onKeyDown = (event: ReactKeyboardEvent) => {
+    if (event.key === "Escape") {
+      if (selection) { event.stopPropagation(); setSelection(null); }
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c") {
+      if (!selection || !sheet.rows.length || !sheet.columns) return;
+      event.preventDefault();
+      const top = Math.min(selection.anchor[0], selection.focus[0]);
+      const bottom = Math.max(selection.anchor[0], selection.focus[0]);
+      const left = Math.min(selection.anchor[1], selection.focus[1]);
+      const right = Math.max(selection.anchor[1], selection.focus[1]);
+      void navigator.clipboard?.writeText(rangeTsv(sheet.rows, top, bottom, left, right));
+      return;
+    }
+    const delta = event.metaKey || event.ctrlKey || event.altKey ? undefined : ARROW_MOVES[event.key];
+    if (!delta) return;
+    event.preventDefault();
+    move(delta[0], delta[1], event.shiftKey);
+  };
   return <div className="office-sheet">
+    <div className="office-hint">
+      {!hintCollapsed && <span className="min-w-0">Click a cell to select it. Move with the arrow keys, extend with Shift, copy with {copyKeyLabel()}.</span>}
+      <button type="button" aria-expanded={!hintCollapsed} aria-label={hintCollapsed ? "Show selection help" : "Hide selection help"}
+        onClick={() => { setHintCollapsed(!hintCollapsed); storeHintCollapsed(!hintCollapsed); }}>
+        {hintCollapsed ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
+      </button>
+    </div>
     <div role="tablist" aria-label="Sheets" className="office-sheet-tabs scroll-thin">
-      {workbook.sheets.map((item, i) => <button key={i} type="button" role="tab" aria-selected={i === index} onClick={() => setIndex(i)}>{item.name}</button>)}
+      {workbook.sheets.map((item, i) => <button key={i} type="button" role="tab" aria-selected={i === index} onClick={() => { setIndex(i); setSelection(null); }}>{item.name}</button>)}
     </div>
     <div className="office-grid scroll-thin">
-      {sheet.rows.length ? <table aria-label={sheet.name}>
+      {sheet.rows.length ? <table role="grid" tabIndex={0} aria-label={sheet.name} onKeyDown={onKeyDown}>
         <thead><tr><th aria-hidden="true" />{columns.map((name) => <th key={name} scope="col">{name}</th>)}</tr></thead>
-        <tbody>{sheet.rows.map((row, r) => <tr key={r}><th scope="row">{r + 1}</th>{columns.map((name, c) => <td key={name}>{row[c] ?? ""}</td>)}</tr>)}</tbody>
+        <tbody>{sheet.rows.map((row, r) => <tr key={r}><th scope="row">{r + 1}</th>{columns.map((name, c) => <td key={name} role="gridcell" aria-selected={inSelection(r, c)} onClick={(event) => select(r, c, event.shiftKey)}>{row[c] ?? ""}</td>)}</tr>)}</tbody>
       </table> : !note && <p className="p-6 text-center text-[14px] text-muted">This sheet is empty.</p>}
     </div>
     {note && <p role="status" className="office-note">Showing {note}. Open the original file for the rest.</p>}

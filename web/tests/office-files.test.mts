@@ -362,3 +362,55 @@ test("the composer's Escape closes the viewer on an empty message and keeps it w
   assert.equal(closed, 1, "Escape on an empty message closes the viewer");
   assert.deepEqual(asked, []);
 });
+
+const GRID_SHEET = xlsx({ sheet1: `<worksheet xmlns="${S}"><sheetData>
+<row r="1"><c r="A1" t="inlineStr"><is><t>1</t></is></c><c r="B1"><v>2</v></c></row>
+<row r="2"><c r="A2"><v>3</v></c><c r="B2"><v>4</v></c></row>
+</sheetData></worksheet>` });
+
+test("cells select, extend into a range, copy as TSV and clear with Escape", async () => {
+  body = GRID_SHEET;
+  localStorage.clear();
+  await open("library/grid.xlsx");
+  const hint = document.querySelector(".office-hint span");
+  assert.match(hint.textContent, /Click a cell to select it\. Move with the arrow keys, extend with Shift, copy with Ctrl\+C\./);
+  const grid = document.querySelector('[role="grid"]') as HTMLElement;
+  assert.equal(grid.getAttribute("tabindex"), "0");
+  const copied: string[] = [];
+  Object.defineProperty(window.navigator, "clipboard", { configurable: true, value: { writeText: async (text: string) => { copied.push(text); } } });
+  const cells = [...document.querySelectorAll<HTMLElement>('.office-grid td[role="gridcell"]')];
+  assert.equal(cells.length, 4);
+  await act(async () => { cells[0].click(); });
+  assert.deepEqual(cells.map((cell) => cell.getAttribute("aria-selected")), ["true", "false", "false", "false"]);
+  await act(async () => cells[3].dispatchEvent(new window.MouseEvent("click", { shiftKey: true, bubbles: true })));
+  assert.deepEqual(cells.map((cell) => cell.getAttribute("aria-selected")), ["true", "true", "true", "true"], "Shift+click extends to the rectangular range");
+  await act(async () => grid.dispatchEvent(new window.KeyboardEvent("keydown", { key: "c", metaKey: true, bubbles: true })));
+  assert.deepEqual(copied, ["1\t2\n3\t4"]);
+  await act(async () => grid.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  assert.deepEqual(cells.map((cell) => cell.getAttribute("aria-selected")), ["false", "false", "false", "false"]);
+  await act(async () => grid.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  await act(async () => grid.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+  assert.deepEqual(cells.map((cell) => cell.getAttribute("aria-selected")), ["false", "false", "true", "false"], "arrow keys move the selection from the top-left cell");
+  await act(async () => grid.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, bubbles: true })));
+  assert.deepEqual(cells.map((cell) => cell.getAttribute("aria-selected")), ["false", "false", "true", "true"], "Shift+arrows extend the range");
+  await act(async () => grid.dispatchEvent(new window.KeyboardEvent("keydown", { key: "c", ctrlKey: true, bubbles: true })));
+  assert.deepEqual(copied, ["1\t2\n3\t4", "3\t4"], "Ctrl+C copies the same range on non-Mac platforms");
+});
+
+test("the selection hint collapses, is remembered across mounts and expands again", async () => {
+  body = SMALL_SHEET;
+  localStorage.clear();
+  await open("library/hint.xlsx");
+  assert.match(document.querySelector(".office-hint span").textContent, /Click a cell/);
+  await act(async () => (document.querySelector('button[aria-label="Hide selection help"]') as HTMLElement).click());
+  assert.equal(document.querySelector(".office-hint span"), null);
+  assert.equal(localStorage.getItem("office-sheet-hint-collapsed"), "1");
+  await act(async () => root.unmount());
+  host.remove();
+  host = document.createElement("main"); document.body.append(host); root = createRoot(host);
+  await open("library/hint.xlsx");
+  assert.equal(document.querySelector(".office-hint span"), null, "the collapsed bar stays collapsed on the next mount");
+  await act(async () => (document.querySelector('button[aria-label="Show selection help"]') as HTMLElement).click());
+  assert.match(document.querySelector(".office-hint span").textContent, /Click a cell/);
+  assert.equal(localStorage.getItem("office-sheet-hint-collapsed"), "0");
+});
