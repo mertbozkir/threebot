@@ -118,9 +118,17 @@ export function createUsageLedger({ file, now = Date.now }: { file: string; now?
   let state: UsageLedgerFile | null = null;
   const load = async (): Promise<UsageLedgerFile> => {
     if (state) return state;
+    let raw: string | null = null;
     let saved: UsageLedgerFile | null = null;
-    try { saved = JSON.parse(await fs.readFile(file, "utf8")); } catch { /* Missing or broken file: start over. */ }
-    state = saved && (saved as UsageLedgerFile).version === 1 && typeof saved.since === "string" && Array.isArray(saved.seen) && Array.isArray(saved.entries)
+    try { raw = await fs.readFile(file, "utf8"); } catch { /* No ledger yet. */ }
+    try { saved = raw === null ? null : JSON.parse(raw); } catch { /* Handled below. */ }
+    const valid = !!saved && saved.version === 1 && typeof saved.since === "string" && Array.isArray(saved.seen) && Array.isArray(saved.entries);
+    if (raw !== null && !valid) {
+      // Keep an unreadable ledger for inspection instead of overwriting it on the next save.
+      await fs.rename(file, `${file}.broken`).catch(() => {});
+      console.log(`usage ledger: unreadable file moved to ${path.basename(file)}.broken; starting a new one`);
+    }
+    state = valid && saved
       ? { version: 1, since: saved.since, seen: saved.seen.filter((key) => typeof key === "string"), entries: saved.entries.filter(validEntry) }
       : { version: 1, since: new Date(now()).toISOString(), seen: [], entries: [] };
     return state;

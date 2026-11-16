@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -147,6 +147,17 @@ test("the ledger file is written atomically, 0600, and reads back", async () => 
     const { rows } = await reopened.rows({ days: 7, timeZone: "UTC" });
     assert.equal(rows.length, 1);
     assert.deepEqual([rows[0]!.bot, rows[0]!.input, rows[0]!.turns], ["scout", 10, 1]);
+  } finally { await h.cleanup(); }
+});
+
+test("an unreadable ledger is kept aside, not overwritten", async () => {
+  const h = await ledgerHarness();
+  try {
+    await mkdir(path.dirname(h.file), { recursive: true });
+    await writeFile(h.file, "{not json");
+    const ledger = createUsageLedger({ file: h.file, now: () => NOW });
+    assert.deepEqual((await ledger.rows({ days: 7, timeZone: "UTC" })).rows, []);
+    assert.equal(await readFile(`${h.file}.broken`, "utf8"), "{not json");
   } finally { await h.cleanup(); }
 });
 
