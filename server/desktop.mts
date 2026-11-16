@@ -1,17 +1,21 @@
 // The Bots' computer (Settings › Beta › Computer): one Linux desktop container shared by all Bots,
 // with one screen (X display) per Bot. It starts on first use and stops after an idle period;
 // files and browser sign-ins live on volumes, so they survive the stop. It runs on Apple's
-// `container` (one VM per container). Each screen's VNC server is a Unix socket that the
-// runtime publishes into a private folder on the host; nothing listens on the network.
+// `container` (one VM per container) on this Mac, or over SSH on a Docker host the person owns
+// (see DesktopRuntime). Each screen's VNC server is a Unix socket: published into a private
+// folder on the host, or bind-mounted on the remote one; nothing listens on the network.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
+import net from "node:net";
 import path from "node:path";
+import { Duplex } from "node:stream";
 import sharp from "sharp";
 
 export type DesktopState = "off" | "unavailable" | "building" | "stopped" | "starting" | "healthy" | "stopping" | "failed";
 export interface RunResult { code: number; stdout: Buffer; stderr: string }
-export type Run = (args: string[], options?: { timeoutMs?: number }) => Promise<RunResult>;
+export interface RunOptions { timeoutMs?: number; /** Directory to tar onto the command's stdin. */ stdinFrom?: string }
+export type Run = (args: string[], options?: RunOptions) => Promise<RunResult>;
 
 /** Tools work in this coordinate space; the screens are bigger and get scaled. */
 export const MODEL_WIDTH = 1280;
@@ -65,10 +69,14 @@ export function runArgs({ image, hash, screens, socketDir }: { image: string; ha
   ];
 }
 
-function inspectedRunning(inspect: unknown): boolean {
-  const item = Array.isArray(inspect) ? inspect[0] : inspect;
-  return item?.status === "running";
+/** One argument as a POSIX shell word, always single-quoted (' → '\''), so nothing else is ever interpreted. */
+export function shellQuote(arg: string): string {
+  return `'${arg.replaceAll("'", `'\\''`)}'`;
 }
+
+/** Docker's inspect prints an array; Apple's prints an object — both reach the runtimes as whatever came back. */
+const firstInspect = (inspect: unknown): { status?: string; State?: { Status?: string } } | undefined =>
+  (Array.isArray(inspect) ? inspect[0] : inspect) as { status?: string; State?: { Status?: string } } | undefined;
 
 // ---------- actions ----------
 const KEYS_RE = /^[A-Za-z0-9_]+(\+[A-Za-z0-9_]+)*( [A-Za-z0-9_]+(\+[A-Za-z0-9_]+)*)*$/;
@@ -135,6 +143,21 @@ export function xdotoolArgs(actions: unknown): string[][] {
 export function pasteText(text: unknown): string {
   if (typeof text !== "string" || !text || text.length > 2000 || /[\u0000-\u0008\u000b-\u001f\u007f]/.test(text)) throw Object.assign(new Error("text must be 1..2000 characters without control characters"), { status: 400 });
   return text;
+}
+
+export type ComputerSetting = { where: "mac" } | { where: "ssh"; host: string };
+
+/** Where the Bots' computer runs: this Mac, or an SSH host (alias or user@host shape) running Docker. */
+export function computerSetting(value: unknown): ComputerSetting {
+  if (value === undefined || value === null) return { where: "mac" };
+  const setting = value as { where?: unknown; host?: unknown };
+  if (setting.where === "mac") return { where: "mac" };
+  if (setting.where === "ssh") {
+    const { host } = setting;
+    if (typeof host === "string" && host.length >= 1 && host.length <= 253 && /^[A-Za-z0-9._@][A-Za-z0-9._@-]*$/.test(host)) return { where: "ssh", host };
+    throw Object.assign(new Error("computer.ssh.host must be an SSH host or alias: 1..253 characters of letters, digits, dots, dashes, underscores or @"), { status: 400 });
+  }
+  throw Object.assign(new Error('computer.where must be "mac" or "ssh"'), { status: 400 });
 }
 
 /** The pointer position a watcher sees for an action, in model coordinates; a drag points where it ends. */
@@ -211,6 +234,106 @@ export function createRfbClientFilter(mode: "watch" | "control") {
   };
 }
 
+// ---------- runtimes: where the container runs ----------
+export interface DesktopRuntime {
+  /** Program spawnRun executes; command(args) is the rest of the argv. */
+  cli: string;
+  /** Shapes one desktop verb (docker-style args) into the argv after the cli. */
+  command(args: string[]): string[];
+  /** Checks the runtime is usable — over SSH it also reports the home it will use and makes the screen folder; null when usable, else the reason. */
+  probe(run: Run): Promise<string | null>;
+  /** The reason a failed call means the runtime itself is gone (state → unavailable, next call re-probes) rather than an ordinary failure. */
+  unavailable(result: RunResult): string | null;
+  /** Removes the container. */
+  removeArgs(): string[];
+  /** Starts the container. */
+  runArgs(options: { image: string; hash: string; screens: number; socketDir: string }): string[];
+  /** Builds the image; stdinFrom tars that folder onto the command's stdin instead of passing it as an argument. */
+  buildArgs(image: string, imageDir: string): { args: string[]; stdinFrom?: string };
+  /** Whether an inspect result says the container is running. */
+  running(inspect: unknown): boolean;
+  /** Opens a screen's VNC stream: the local socket here, ssh -W into the remote one elsewhere. Destroying it tears the stream down. */
+  openScreen(socketDir: string, display: number): Duplex;
+}
+
+/** The Bots' computer on this Mac: Apple's `container`, one VM per container. */
+export const appleRuntime: DesktopRuntime = {
+  cli: "container",
+  command: (args) => args,
+  async probe(run) {
+    const result = await run(["system", "status"], { timeoutMs: 10_000 });
+    if (result.code === 0) return null;
+    return result.code === -1
+      ? "Apple's container isn't installed (github.com/apple/container)."
+      : "Apple's container isn't running. Start it with: container system start";
+  },
+  unavailable: () => null,
+  removeArgs: () => ["delete", "--force", CONTAINER_NAME],
+  runArgs,
+  buildArgs: (image, imageDir) => ({ args: ["build", "-t", image, imageDir] }),
+  running: (inspect) => firstInspect(inspect)?.status === "running",
+  openScreen: (socketDir, display) => net.connect(path.join(socketDir, `${display}.sock`)),
+};
+
+const PROBE_SCRIPT = 'printf "%s\\n" "$HOME"; id -u; mkdir -p "$HOME/.threebot-desktop/vnc"; chmod 700 "$HOME/.threebot-desktop/vnc"';
+
+/** The Bots' computer on another machine the person owns: Docker reached over their own SSH access, one persistent connection for every command. */
+export function sshDockerRuntime({ host, controlPath }: { host: string; controlPath: string }): DesktopRuntime {
+  let home: string | null = null;
+  const opts = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=3", "-o", "ControlMaster=auto", "-o", `ControlPath=${controlPath}`, "-o", "ControlPersist=10m"];
+  // spawnRun supplies the `ssh` binary itself (cli below), so the line starts at its options.
+  const sshLine = (remote: string[]) => [...opts, host, "--", ...remote];
+  const command = (args: string[]) => sshLine(["docker", ...args.map(shellQuote)]);
+  const vncDir = () => {
+    if (!home) throw new Error("The computer hasn't probed the host yet.");
+    return `${home}/.threebot-desktop/vnc`;
+  };
+  return {
+    cli: "ssh",
+    command,
+    async probe(run) {
+      // One remote line reports the home and uid the desktop needs and makes the screen folder; Docker access is checked after.
+      const setup = await run(sshLine(["sh", "-c", PROBE_SCRIPT].map(shellQuote)), { timeoutMs: 10_000 });
+      if (setup.code === 255) return `Can't reach ${host} over SSH.`;
+      const [foundHome, uid] = setup.stdout.toString().split("\n").map((line) => line.trim());
+      if (uid !== "1000") return `The desktop needs uid 1000 on ${host} (yours is ${uid || "unknown"}).`;
+      home = foundHome;
+      const info = await run(command(["info"]), { timeoutMs: 10_000 });
+      if (info.code === 0) return null;
+      return info.stderr.includes("Cannot connect to the Docker daemon")
+        ? `Docker isn't running on ${host}.`
+        : `Docker isn't usable on ${host}: ${info.stderr.trim().slice(-300)}`;
+    },
+    unavailable: (result) => result.code === 255
+      ? `Can't reach ${host} over SSH.`
+      : result.stderr.includes("Cannot connect to the Docker daemon") ? `Docker isn't running on ${host}.` : null,
+    removeArgs: () => ["rm", "-f", CONTAINER_NAME],
+    runArgs: ({ image, hash, screens }) => {
+      const memoryMb = 1024 + 512 * screens;
+      return [
+        "run", "-d", "--name", CONTAINER_NAME, "--label", `${LABEL}=${hash}`,
+        "-e", `SCREENS=${screens}`, "-e", `GEOMETRY=${SCREEN_WIDTH}x${SCREEN_HEIGHT}`,
+        "--memory", `${memoryMb}m`, "--cpus", "2",
+        "-v", `${HOME_VOLUME}:/home/bot`, "-v", `${WORKSPACE_VOLUME}:/workspace`,
+        "-v", `${vncDir()}:/tmp/vnc`,
+        "--hostname", CONTAINER_NAME, "--cap-add", "NET_ADMIN", "--security-opt", "no-new-privileges", "--sysctl", "net.ipv6.conf.all.disable_ipv6=1",
+        image,
+      ];
+    },
+    buildArgs: (image, imageDir) => ({ args: ["build", "-t", image, "-"], stdinFrom: imageDir }),
+    running: (inspect) => firstInspect(inspect)?.State?.Status === "running",
+    openScreen: (_socketDir, display) => {
+      const child = spawn("ssh", [...opts, "-W", `${vncDir()}/${display}.sock`, host], { stdio: ["pipe", "pipe", "pipe"] });
+      // Node streams, paired; the typings only model the web-stream pair, so the shape is asserted.
+      const screen = Duplex.from({ readable: child.stdout, writable: child.stdin } as unknown as Parameters<typeof Duplex.from>[0]);
+      screen.on("close", () => child.kill());
+      child.once("close", () => screen.destroy());
+      child.stderr.resume();
+      return screen;
+    },
+  };
+}
+
 // ---------- the module ----------
 export interface DesktopOptions {
   imageDir: string;
@@ -218,6 +341,8 @@ export interface DesktopOptions {
   socketDir: string;
   /** False where Apple's `container` can't run (anything but macOS). */
   supported?: boolean;
+  /** Where the container runs: this Mac (default) or another machine over SSH. */
+  runtime?: DesktopRuntime;
   run?: Run;
   screens?: number;
   idleMs?: number;
@@ -230,10 +355,25 @@ export interface DesktopActivity { busy: boolean; last: { type: string; x: numbe
 export interface DesktopStatus { state: DesktopState; reason: string | null; screens: number; display: number | null; controlled: boolean; helpRequest: { instruction: string; at: string } | null; activity: DesktopActivity }
 
 export function spawnRun(cli = "container"): Run {
-  return (args, { timeoutMs = START_TIMEOUT_MS } = {}) => new Promise((resolve) => {
-    const child = spawn(cli, args, { stdio: ["ignore", "pipe", "pipe"] });
+  return (args: string[], { timeoutMs = START_TIMEOUT_MS, stdinFrom }: RunOptions = {}) => new Promise((resolve) => {
+    const child = stdinFrom
+      ? spawn(cli, args, { stdio: ["pipe", "pipe", "pipe"] })
+      : spawn(cli, args, { stdio: ["ignore", "pipe", "pipe"] });
     const out: Buffer[] = []; let err = "";
     const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
+    if (stdinFrom) {
+      // The build context arrives as a tar on stdin: one local tar piped straight into the child.
+      const stdin = child.stdin;
+      if (stdin) {
+        const tar = spawn("tar", ["-C", stdinFrom, "-cf", "-", "."], { stdio: ["ignore", "pipe", "pipe"] });
+        stdin.on("error", () => {});
+        tar.stdout.pipe(stdin);
+        tar.on("close", () => stdin.end());
+        const stopTar = () => tar.kill();
+        child.on("close", stopTar);
+        child.on("error", stopTar);
+      }
+    }
     child.stdout.on("data", (chunk: Buffer) => out.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => { err = (err + chunk.toString()).slice(-4000); });
     child.on("error", (error) => { clearTimeout(timer); resolve({ code: -1, stdout: Buffer.alloc(0), stderr: String(error.message) }); });
@@ -241,7 +381,7 @@ export function spawnRun(cli = "container"): Run {
   });
 }
 
-export function createDesktop({ imageDir, socketDir, supported = true, run = spawnRun(), screens = 4, idleMs = 120_000, log = () => {}, onHelpReturned }: DesktopOptions) {
+export function createDesktop({ imageDir, socketDir, supported = true, runtime = appleRuntime, run = spawnRun(runtime.cli), screens = 4, idleMs = 120_000, log = () => {}, onHelpReturned }: DesktopOptions) {
   let state: DesktopState = "off";
   let reason: string | null = null;
   let hash: string | null = null;
@@ -263,23 +403,39 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
   };
   const image = () => `${IMAGE_REPO}:${hash}`;
   const fail = (why: string) => { state = "failed"; reason = why.trim().split("\n").slice(-3).join(" ").slice(0, 500); log(`desktop: failed: ${reason}`); };
+  /** A failed call that means the runtime itself is gone flips the state, so the next call probes again instead of retrying blind. */
+  const markUnavailable = (result: RunResult): boolean => {
+    const why = runtime.unavailable(result);
+    if (!why) return false;
+    state = "unavailable"; reason = why;
+    log(`desktop: unavailable: ${why}`);
+    return true;
+  };
+  const failOrUnavailable = (error: Error & { unavailable?: true }) => {
+    if (error.unavailable) { state = "unavailable"; reason = error.message; log(`desktop: unavailable: ${reason}`); } else fail(error.message);
+  };
+  /** One desktop verb, shaped for the runtime (ssh wraps and quotes it; apple passes it through). */
+  const verb = (args: string[], options?: RunOptions) => run(runtime.command(args), options);
 
   async function inspect(): Promise<unknown | null> {
-    const result = await run(["inspect", CONTAINER_NAME]);
+    const result = await verb(["inspect", CONTAINER_NAME]);
     if (result.code !== 0) return null;
     try { const parsed = JSON.parse(result.stdout.toString()); return Array.isArray(parsed) && parsed.length === 0 ? null : parsed; } catch { return null; }
   }
-  async function remove() {
+  /** Removes the container; true when the removal hit an unavailable runtime. */
+  async function remove(): Promise<boolean> {
     // Browsers write cookies on a clean exit; give them a moment so sign-ins survive the stop.
     if (state === "healthy" || state === "stopping") {
-      await run(["exec", "-u", "bot", CONTAINER_NAME, "pkill", "-TERM", "chromium"], { timeoutMs: 5000 });
+      await exec(["pkill", "-TERM", "chromium"], { timeoutMs: 5000 });
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
-    await run(["delete", "--force", CONTAINER_NAME]);
+    return markUnavailable(await verb(runtime.removeArgs()));
   }
   async function exec(args: string[], { user = "bot", display, timeoutMs = EXEC_TIMEOUT_MS }: { user?: string; display?: number; timeoutMs?: number } = {}) {
     const env = display ? ["-e", `DISPLAY=:${display}`, "-e", "HOME=/home/bot"] : [];
-    return run(["exec", "-u", user, ...env, CONTAINER_NAME, ...args], { timeoutMs });
+    const result = await verb(["exec", "-u", user, ...env, CONTAINER_NAME, ...args], { timeoutMs });
+    markUnavailable(result);
+    return result;
   }
 
   function scheduleIdle() {
@@ -292,13 +448,17 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
 
   async function ensureImage() {
     hash = await imageHash(imageDir);
-    if ((await run(["image", "inspect", image()])).code === 0) return;
+    if ((await verb(["image", "inspect", image()])).code === 0) return;
     if (!building) {
       building = (async () => {
         state = "building"; reason = null;
         log(`desktop: building ${image()}`);
-        const result = await run(["build", "-t", image(), imageDir], { timeoutMs: BUILD_TIMEOUT_MS });
-        if (result.code !== 0) throw new Error(`image build failed: ${result.stderr}`);
+        const build = runtime.buildArgs(image(), imageDir);
+        const result = await verb(build.args, { timeoutMs: BUILD_TIMEOUT_MS, stdinFrom: build.stdinFrom });
+        if (result.code !== 0) {
+          const why = runtime.unavailable(result);
+          throw why ? Object.assign(new Error(why), { unavailable: true as const }) : new Error(`image build failed: ${result.stderr}`);
+        }
         log(`desktop: built ${image()}`);
       })().finally(() => { building = null; });
     }
@@ -307,10 +467,9 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
 
   async function probe(): Promise<boolean> {
     if (!supported) { state = "unavailable"; reason = "The computer runs on macOS with Apple's container for now."; return false; }
-    const result = await run(["system", "status"], { timeoutMs: 10_000 });
-    if (result.code === 0) return true;
-    state = "unavailable";
-    reason = result.code === -1 ? "Apple's container isn't installed (github.com/apple/container)." : "Apple's container isn't running. Start it with: container system start";
+    const why = await runtime.probe(run);
+    if (why === null) return true;
+    state = "unavailable"; reason = why;
     return false;
   }
 
@@ -319,7 +478,7 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
     return serial(async () => {
       if (state !== "off" && state !== "unavailable" && state !== "failed") return;
       if (!(await probe())) return;
-      try { await ensureImage(); } catch (error) { return fail(String((error as Error).message)); }
+      try { await ensureImage(); } catch (error) { return failOrUnavailable(error as Error & { unavailable?: true }); }
       // A container left from an earlier gateway is restarted fresh rather than adopted.
       if (await inspect()) await remove();
       state = "stopped"; reason = null;
@@ -332,9 +491,10 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
       if (why === "idle" && (busy > 0 || controlled.size > 0)) return;
       state = "stopping";
       log(`desktop: stopping (${why})`);
-      await remove();
+      const gone = await remove();
       leases.clear(); screenBusy.clear(); activities.clear();
-      state = "stopped";
+      // A stop whose remove hit an unreachable runtime stays unavailable, so the next call re-probes.
+      state = gone ? "unavailable" : "stopped";
     });
   }
 
@@ -355,26 +515,29 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
       if (state === "healthy") return;
       if (state === "off") throw Object.assign(new Error("The computer is switched off in Settings › Beta."), { status: 404 });
       if (state === "unavailable" && !(await probe())) throw Object.assign(new Error(`Computer unavailable: ${reason}`), { status: 503 });
-      try { await ensureImage(); } catch (error) { fail(String((error as Error).message)); throw Object.assign(new Error(`Computer unavailable: ${reason}`), { status: 503 }); }
+      try { await ensureImage(); } catch (error) { failOrUnavailable(error as Error & { unavailable?: true }); throw Object.assign(new Error(`Computer unavailable: ${reason}`), { status: 503 }); }
       state = "starting"; reason = null;
       await remove();
       await fs.mkdir(socketDir, { recursive: true, mode: 0o700 });
       await fs.chmod(socketDir, 0o700);
       for (let display = 1; display <= screens; display++) await fs.rm(path.join(socketDir, `${display}.sock`), { force: true });
-      const started = await run(runArgs({ image: image(), hash: hash!, screens, socketDir }), { timeoutMs: START_TIMEOUT_MS });
-      if (started.code !== 0) { fail(started.stderr); throw Object.assign(new Error(`The computer didn't start: ${reason}`), { status: 503 }); }
+      const started = await verb(runtime.runArgs({ image: image(), hash: hash!, screens, socketDir }), { timeoutMs: START_TIMEOUT_MS });
+      if (started.code !== 0) {
+        if (!markUnavailable(started)) fail(started.stderr);
+        throw Object.assign(new Error(`The computer didn't start: ${reason}`), { status: 503 });
+      }
       const deadline = Date.now() + READY_TIMEOUT_MS;
       while (Date.now() < deadline) {
         const ready = await exec(["test", "-f", "/tmp/desktop-ready"], { timeoutMs: 5000 });
         if (ready.code === 0) break;
-        if (!inspectedRunning(await inspect())) break;
+        if (!runtime.running(await inspect())) break;
         await new Promise((r) => setTimeout(r, 400));
       }
       const found = await inspect();
-      const ready = found && inspectedRunning(found) ? (await exec(["test", "-f", "/tmp/desktop-ready"], { timeoutMs: 5000 })).code === 0 : false;
+      const ready = found && runtime.running(found) ? (await exec(["test", "-f", "/tmp/desktop-ready"], { timeoutMs: 5000 })).code === 0 : false;
       if (!ready) {
-        const logs = await run(["logs", CONTAINER_NAME], { timeoutMs: 5000 });
-        fail(`not ready: ${logs.stdout.toString().slice(-500) || logs.stderr}`);
+        const logs = await verb(["logs", CONTAINER_NAME], { timeoutMs: 5000 });
+        if (!markUnavailable(logs)) fail(`not ready: ${logs.stdout.toString().slice(-500) || logs.stderr}`);
         await remove();
         throw Object.assign(new Error(`The computer didn't start: ${reason}`), { status: 503 });
       }
@@ -401,6 +564,7 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
     if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
     try {
       if (controlled.has(slug)) throw new Error(CONTROLLED_MESSAGE);
+      if (state === "building") throw new Error("The computer is still being prepared. Try again in a minute.");
       await wake();
       const display = lease(slug);
       if (screenBusy.has(display)) throw new Error("Your screen is busy with another batch of actions. Wait for it to finish.");
@@ -425,10 +589,15 @@ export function createDesktop({ imageDir, socketDir, supported = true, run = spa
     status(slug: string | null): DesktopStatus {
       return { state, reason, screens, display: slug ? leases.get(slug) ?? null : null, controlled: slug ? controlled.has(slug) : false, helpRequest: slug ? helpRequests.get(slug) ?? null : null, activity: (slug ? activities.get(slug) : undefined) ?? IDLE_ACTIVITY };
     },
-    /** The Bot's screen socket, for the gateway's viewer connection. Watching vs control is the gateway's filter. */
+    /** The Bot's screen socket, for the gateway's viewer connection. Watching vs control is the gateway's filter. Kept for compatibility; openScreen replaces it. */
     vncSocket(slug: string): string | null {
       if (state !== "healthy") return null;
       return path.join(socketDir, `${lease(slug)}.sock`);
+    },
+    /** The Bot's screen as a live stream, leasing it exactly like vncSocket. Destroying the stream tears it down. */
+    openScreen(slug: string): Duplex {
+      if (state !== "healthy") throw new Error("The computer is not running.");
+      return runtime.openScreen(socketDir, lease(slug));
     },
     /** A person takes over a Bot's screen; Bot calls return at once until every control session ends. */
     takeControl(slug: string) {

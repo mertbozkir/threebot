@@ -41,6 +41,8 @@ export type Machine = {
 export type CodingMachine = { environmentId: string; label: string };
 /** Settings → Machines → Where coding work runs. environmentId "local" is the machine Threebot runs on. */
 export type CodingWork = { preferred: CodingMachine | null; fallback: CodingMachine | null };
+/** Settings → Beta → Computer → Runs on: this Mac, or a Docker host reached over the person's own SSH access. */
+export type ComputerSetting = { where: "mac" } | { where: "ssh"; host: string };
 
 /** The roster line for a conversation, which T3's shell stream leaves empty. */
 export type ThreadPreview = { kind: "text" | "attachment" | "question" | "sent"; role: "user" | "assistant"; text: string; at: string | null };
@@ -62,6 +64,7 @@ export type Settings = {
   /** Settings → Beta: experimental features, saved on the server because they change what Bots get. */
   beta: { projects: boolean; desktop?: boolean };
   codingWork?: CodingWork | null;
+  computer?: ComputerSetting;
 };
 
 export type ProviderOptionSelection = { id: string; value: string | boolean };

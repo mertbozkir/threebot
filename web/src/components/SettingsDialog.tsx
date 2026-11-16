@@ -370,6 +370,12 @@ const BETA_FEATURES = [
 function Beta({ s }: { s: Settings }) {
   const save = useContext(SettingsSave);
   const beta = s.beta ?? { projects: false, desktop: false };
+  const computer = s.computer ?? { where: "mac" as const };
+  // What the menu shows: "Another machine" reveals the host field; the save happens there or on switching back.
+  const savedHost = computer.where === "ssh" ? computer.host : "";
+  const [where, setWhere] = useState<"mac" | "ssh">(computer.where);
+  const [host, setHost] = useState(savedHost);
+  useEffect(() => { setWhere(computer.where); setHost(savedHost); }, [s.computer]);
   return (
     <>
       <p className="mb-4 text-[13px] text-muted">Features that are still taking shape. Switching one off hides it from you and your Bots; nothing is deleted.</p>
@@ -379,6 +385,15 @@ function Beta({ s }: { s: Settings }) {
             <Switch checked={beta[f.key] === true} onChange={(v) => save({ beta: { ...beta, [f.key]: v } })} label={f.title} />
           </Row>
         ))}
+        {beta.desktop && <Row title="Runs on" desc={where === "ssh" ? "A Docker host reached over SSH. Switching stops the computer; files and sign-ins stay on each machine." : "This Mac, or another machine you reach over SSH. Switching stops the computer; files and sign-ins stay on each machine."}>
+          <Select label="Runs on" value={where} onChange={(next) => { setWhere(next); if (next === "mac") void save({ computer: { where: "mac" } }); }} options={[["mac", "This Mac"], ["ssh", "Another machine"]]} />
+        </Row>}
+        {beta.desktop && where === "ssh" && <Row title="SSH host" desc="A host from your ~/.ssh/config with Docker running on it.">
+          <form className="flex items-center gap-2" onSubmit={(event) => { event.preventDefault(); if (host.trim() && host.trim() !== savedHost) void save({ computer: { where: "ssh", host: host.trim() } }); }}>
+            <input aria-label="SSH host" value={host} onChange={(event) => setHost(event.target.value)} placeholder="a host from your ~/.ssh/config" className="h-8 w-48 rounded-lg border border-line bg-elevated px-2.5 text-[13px] outline-none" />
+            <button type="submit" disabled={!host.trim() || host.trim() === savedHost} className="text-[12.5px] text-muted hover:text-fg disabled:opacity-50">Save</button>
+          </form>
+        </Row>}
       </Group>
       <Group title="Cloud transcription">
         <CloudDictationRows />

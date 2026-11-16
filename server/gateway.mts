@@ -56,7 +56,7 @@ import { createRoomRoutes } from "./rooms-routes.mts";
 import { PROJECT_TOOLS, createProjectTools } from "./projects-mcp.mts";
 import { createProjectRoutes } from "./projects-routes.mts";
 import { BETA_DEFAULTS, betaSettings, patchBeta, settleBetaDefaults } from "./beta.mts";
-import { createDesktop, createDesktopTools, createRfbClientFilter, DESKTOP_TOOLS, pasteText } from "./desktop.mts";
+import { computerSetting, createDesktop, createDesktopTools, createRfbClientFilter, DESKTOP_TOOLS, pasteText, sshDockerRuntime, type ComputerSetting } from "./desktop.mts";
 import net from "node:net";
 import { aggregateTurnUsage, createTelemetry, MIN_T3_FOR_TOKENS, versionAtLeast, type PayloadInput } from "./telemetry.mts";
 import { AVATAR_BODY_LIMIT, avatarImagePatch, decodeAvatarImage, storeAvatarImage, readAvatarImage } from "./avatar-images.mts";
@@ -420,6 +420,7 @@ const DEFAULT_SETTINGS = {
   avatarDrawingModel: null,
   beta: BETA_DEFAULTS,
   codingWork: null,
+  computer: { where: "mac" },
 };
 const settingsPath = path.join(appDir, "settings.json");
 // Settings → Beta: decide the Projects board's default once, before anything reads the settings.
@@ -438,23 +439,35 @@ async function getSettings() {
 const projectsOn = async () => (await getSettings()).beta.projects;
 /** The Bots' computer is a beta feature too; off means no container, no tools, no routes. */
 const desktopOn = async () => (await getSettings()).beta.desktop;
-// Apple's `container` runs only on macOS; elsewhere the switch shows the computer as unavailable.
-const desktop = createDesktop({
-  imageDir: path.join(here, "desktop"), socketDir: path.join(appDir, "vnc"), supported: process.platform === "darwin", log: (line) => console.log(line),
-  onHelpReturned: (slug, instruction) => {
-    void (async () => {
-      const bot = (await listBots()).find((candidate) => candidate.slug === slug);
-      if (!bot?.mainThreadId) return;
-      // The Bot was told to wait for this message, so a T3 hiccup must not swallow it.
-      for (const delayMs of [0, 5_000, 30_000, 120_000]) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        try { return void (await dispatchThreadMessage(bot.mainThreadId, `From Threebot: the person handed your screen back after: ${instruction}. Take a new screenshot and carry on.`)); }
-        catch (error) { console.warn(`desktop: hand-back message to ${slug} failed: ${(error as Error).message}`); }
-      }
-      throw new Error("gave up after 4 tries");
-    })().catch((e) => console.error("desktop help notification failed", (e as Error).message));
-  },
-});
+const desktopHelpReturned = (slug: string, instruction: string) => {
+  void (async () => {
+    const bot = (await listBots()).find((candidate) => candidate.slug === slug);
+    if (!bot?.mainThreadId) return;
+    // The Bot was told to wait for this message, so a T3 hiccup must not swallow it.
+    for (const delayMs of [0, 5_000, 30_000, 120_000]) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      try { return void (await dispatchThreadMessage(bot.mainThreadId, `From Threebot: the person handed your screen back after: ${instruction}. Take a new screenshot and carry on.`)); }
+      catch (error) { console.warn(`desktop: hand-back message to ${slug} failed: ${(error as Error).message}`); }
+    }
+    throw new Error("gave up after 4 tries");
+  })().catch((e) => console.error("desktop help notification failed", (e as Error).message));
+};
+/** The computer for where it runs: this Mac (Apple's `container`), or a Docker host over the person's own SSH access. */
+async function makeDesktop(computer: ComputerSetting) {
+  const options = {
+    imageDir: path.join(here, "desktop"), socketDir: path.join(appDir, "vnc"), log: (line: string) => console.log(line),
+    onHelpReturned: desktopHelpReturned,
+  };
+  if (computer.where === "ssh") {
+    // The SSH ControlMaster sockets live here; macOS allows a 104-byte socket path, so the path stays short.
+    const controlDir = path.join(appDir, "ssh");
+    await fs.mkdir(controlDir, { recursive: true, mode: 0o700 });
+    await fs.chmod(controlDir, 0o700).catch(() => {});
+    return createDesktop({ ...options, supported: true, runtime: sshDockerRuntime({ host: computer.host, controlPath: path.join(controlDir, "%C") }) });
+  }
+  return createDesktop({ ...options, supported: process.platform === "darwin" });
+}
+let desktop = await makeDesktop(computerSetting((await getSettings()).computer));
 function botDir(slug: string) {
   if (!SLUG_RE.test(slug)) throw Object.assign(new Error("bad slug"), { status: 400 });
   return path.join(cfg.botsRoot, slug);
@@ -964,7 +977,12 @@ const projectTools = {
 
 const desktopTools = {
   tools: DESKTOP_TOOLS,
-  call: createDesktopTools(desktop),
+  // Through the current desktop: a settings save may swap the instance under these arrows.
+  call: createDesktopTools({
+    screenshot: (...args) => desktop.screenshot(...args),
+    actions: (...args) => desktop.actions(...args),
+    requestHelp: (...args) => desktop.requestHelp(...args),
+  }),
   instructions: "Also your own screen on a shared Linux desktop (computer_screenshot, computer_actions, computer_request_help to ask the person to take over for a step only they can do).",
 };
 
@@ -1304,9 +1322,15 @@ const server = http.createServer(async (req, res) => {
       const next = { ...current, ...patch };
       if ("beta" in patch) next.beta = patchBeta(current.beta, patch.beta);
       if ("codingWork" in patch) next.codingWork = codingWorkPatch(patch.codingWork);
+      if ("computer" in patch) next.computer = computerSetting(patch.computer);
       await writeJson(settingsPath, next);
       if (!next.beta.projects) projectRoutes.closeStreams();
-      if (next.beta.desktop !== current.beta.desktop) void (next.beta.desktop ? desktop.enable() : desktop.disable()).catch((e) => console.error("desktop switch failed", e));
+      const computerChanged = JSON.stringify(next.computer) !== JSON.stringify(current.computer);
+      if (computerChanged) {
+        try { await desktop.disable(); } catch (e) { console.error("desktop switch failed", e); }
+        desktop = await makeDesktop(next.computer);
+      }
+      if (next.beta.desktop !== current.beta.desktop || computerChanged) void (next.beta.desktop ? desktop.enable() : desktop.disable()).catch((e) => console.error("desktop switch failed", e));
       if ("rules" in patch || "userName" in patch || "timezone" in patch || "codingWork" in patch || next.beta.projects !== current.beta.projects || next.beta.desktop !== current.beta.desktop) await refreshAllAgentsMd();
       return send(res, 200, next);
     }
@@ -1493,16 +1517,17 @@ async function desktopUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer
   if (!match || !(await desktopOn())) return refuse("404 Not Found");
   const slug = match[1];
   if (!(await listBots()).some((bot) => bot.slug === slug)) return refuse("404 Not Found");
-  let socketPath: string | null;
-  try { socketPath = desktop.vncSocket(slug); } catch { return refuse("409 Conflict"); }
-  if (!socketPath) return refuse("409 Conflict");
+  // openScreen leases the screen too; a stopped computer or a full one refuses here.
+  let upstream: Duplex;
+  try { upstream = desktop.openScreen(slug); } catch { return refuse("409 Conflict"); }
   desktopWss.handleUpgrade(req, socket, head, (client) => {
     // Watching never counts as activity; control holds the desktop awake and pauses the Bot's own calls.
     const release = mode === "control" ? desktop.takeControl(slug) : null;
     const filter = createRfbClientFilter(mode);
-    const upstream = net.connect({ path: socketPath });
     const pending: Buffer[] = [];
-    let open = false;
+    // A net.Socket is still dialing the local VNC socket; an SSH screen stream is open as soon as it exists.
+    let open = !(upstream instanceof net.Socket) || !upstream.connecting;
+    let paused = false;
     let closed = false;
     const close = () => {
       if (closed) return;
@@ -1519,7 +1544,23 @@ async function desktopUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer
     };
     upstream.on("connect", () => { open = true; for (const chunk of pending.splice(0)) upstream.write(chunk); });
     client.on("message", (data) => forward(Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)));
-    upstream.on("data", (chunk) => { if (client.readyState === WebSocket.OPEN) client.send(chunk, { binary: true }); });
+    upstream.on("data", (chunk) => {
+      if (client.readyState !== WebSocket.OPEN) return;
+      client.send(chunk, { binary: true });
+      // A fast screen can outpace the browser: stop reading until its send buffer drains.
+      if (!paused && client.bufferedAmount > 4 << 20) {
+        paused = true;
+        upstream.pause();
+        const drain = setInterval(() => {
+          if (client.readyState !== WebSocket.OPEN || client.bufferedAmount < 1 << 20) {
+            clearInterval(drain);
+            paused = false;
+            if (client.readyState === WebSocket.OPEN) upstream.resume();
+          }
+        }, 50);
+        drain.unref?.();
+      }
+    });
     upstream.on("close", close);
     upstream.on("error", close);
     client.on("close", close);
