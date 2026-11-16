@@ -7,8 +7,8 @@ const entry = entryChunk(bundle);
 const { parseProviderUsage, peakUsage, resetsIn, parseUsageSummary, usageRange, parseSkills, parseFileSearch, isLibraryPage, searchLibrary, transport } = await import(`data:text/javascript;base64,${Buffer.from(entry.code).toString('base64')}`);
 
 test('quota windows preserve actual provider percent, reset and availability without inventing entitlements', () => {
-  const rows = parseProviderUsage({ providers: [{ instanceId: 'codex', displayName: 'Codex', usageLimits: { checkedAt: '2026-10-31T00:00:00Z', windows: [{ id: 'weekly', label: 'Weekly', usedPercent: 53, resetsAt: '2026-11-04T00:00:00Z' }, { id: 'bad', label: 'Future', usedPercent: 900 }], resetCredits: { availableCount: 1 }, externalUsage: { url: 'javascript:unsafe' } } }, { instanceId: 'other', displayName: 'Other', usageLimits: { unavailable: { reason: 'unsupported' }, windows: [] } }] });
-  assert.deepEqual(rows[0], { id: 'codex', name: 'Codex', windows: [{ id: 'weekly', label: 'Weekly', percent: 53, resetsAt: '2026-11-04T00:00:00Z' }], checkedAt: '2026-10-31T00:00:00Z', unavailable: false, resetCredits: 1, externalUrl: null });
+  const rows = parseProviderUsage({ providers: [{ instanceId: 'codex', driver: 'codex', displayName: 'Codex', usageLimits: { checkedAt: '2026-10-31T00:00:00Z', windows: [{ id: 'weekly', label: 'Weekly', usedPercent: 53, resetsAt: '2026-11-04T00:00:00Z' }, { id: 'bad', label: 'Future', usedPercent: 900 }], resetCredits: { availableCount: 1 }, externalUsage: { url: 'javascript:unsafe' } } }, { instanceId: 'other', displayName: 'Other', usageLimits: { unavailable: { reason: 'unsupported' }, windows: [] } }] });
+  assert.deepEqual(rows[0], { id: 'codex', name: 'Codex', kind: 'codex', windows: [{ id: 'weekly', label: 'Weekly', percent: 53, resetsAt: '2026-11-04T00:00:00Z' }], checkedAt: '2026-10-31T00:00:00Z', unavailable: false, resetCredits: 1, externalUrl: null });
   assert.equal(rows[1].unavailable, true); assert.deepEqual(rows[1].windows, []);
   assert.throws(() => parseProviderUsage({}));
 });

@@ -3,7 +3,7 @@ import { apiRequest } from "./api";
 import { t3 } from "./t3";
 
 export type UsageWindow = { id: string; label: string; percent: number; resetsAt: string | null };
-export type ProviderUsage = { id: string; name: string; windows: UsageWindow[]; checkedAt: string | null; unavailable: boolean; resetCredits: number | null; externalUrl: string | null };
+export type ProviderUsage = { id: string; name: string; kind: string; windows: UsageWindow[]; checkedAt: string | null; unavailable: boolean; resetCredits: number | null; externalUrl: string | null };
 export function parseProviderUsage(value: unknown): ProviderUsage[] {
   return providerRecords(value).flatMap((provider) => {
     // A disabled provider can still carry a stale limits record.
@@ -14,7 +14,8 @@ export function parseProviderUsage(value: unknown): ProviderUsage[] {
       return [{ id: window.id, label: window.label, percent: window.usedPercent, resetsAt: typeof window.resetsAt === "string" && Number.isFinite(Date.parse(window.resetsAt)) ? window.resetsAt : null }];
     });
     const external = isRecord(limits.externalUsage) && typeof limits.externalUsage.url === "string" && /^https:\/\//.test(limits.externalUsage.url) ? limits.externalUsage.url : null;
-    return [{ id: provider.instanceId, name: provider.displayName, windows, checkedAt: typeof limits.checkedAt === "string" ? limits.checkedAt : null, unavailable: !!limits.unavailable, resetCredits: isRecord(limits.resetCredits) && typeof limits.resetCredits.availableCount === "number" ? limits.resetCredits.availableCount : null, externalUrl: external }];
+    const kind = typeof provider.driver === "string" ? provider.driver : "";
+    return [{ id: provider.instanceId, name: provider.displayName, kind, windows, checkedAt: typeof limits.checkedAt === "string" ? limits.checkedAt : null, unavailable: !!limits.unavailable, resetCredits: isRecord(limits.resetCredits) && typeof limits.resetCredits.availableCount === "number" ? limits.resetCredits.availableCount : null, externalUrl: external }];
   });
 }
 
@@ -96,14 +97,14 @@ export function groupUsage(rows: readonly UsageRow[], by: "bot" | "source" | "mo
   return [...top, other];
 }
 
-export type UsageLimitRow = { provider: string; percent: number; resetsAt: string | null };
+export type UsageLimitRow = { provider: string; kind: string; percent: number; resetsAt: string | null };
 export type UsageLimitCard = { title: string; rows: UsageLimitRow[] };
 
 /** Provider windows as cards: session and weekly together, every other window under its provider. */
 export function limitGroups(providers: readonly ProviderUsage[]): UsageLimitCard[] {
   const session: UsageLimitRow[] = [], weekly: UsageLimitRow[] = [], others = new Map<string, UsageLimitRow[]>();
   for (const provider of providers) for (const window of provider.windows) {
-    const row: UsageLimitRow = { provider: provider.name, percent: window.percent, resetsAt: window.resetsAt };
+    const row: UsageLimitRow = { provider: provider.name, kind: provider.kind, percent: window.percent, resetsAt: window.resetsAt };
     const text = `${window.label} ${window.id}`.toLowerCase();
     if (/session|5h|hour/.test(text)) session.push(row);
     else if (text.includes("week")) weekly.push(row);
