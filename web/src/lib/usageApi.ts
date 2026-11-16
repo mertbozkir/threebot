@@ -64,6 +64,7 @@ export const totalIn = (row: Pick<UsageRow, "input" | "cached" | "cacheWrite">) 
 
 /** 1.2M / 340k / 980 */
 export const formatTokens = (n: number) => {
+  if (n >= 1e9) { const b = n / 1e9; return `${b >= 10 ? Math.round(b) : b.toFixed(1)}B`; }
   if (n >= 1e6) { const m = n / 1e6; return `${m >= 10 ? Math.round(m) : m.toFixed(1)}M`; }
   if (n >= 1e3) { const k = n / 1e3; return `${k >= 100 ? Math.round(k) : k.toFixed(1)}k`; }
   return `${Math.round(n)}`;

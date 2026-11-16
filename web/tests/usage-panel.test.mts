@@ -15,6 +15,7 @@ test('totalIn counts cache reads and writes with the uncached input', () => {
 test('token formatter shows 1.2M, 340k and 980', () => {
   assert.equal(formatTokens(1_200_000), '1.2M');
   assert.equal(formatTokens(12_400_000), '12M');
+  assert.equal(formatTokens(1_360_000_000), '1.4B');
   assert.equal(formatTokens(340_000), '340k');
   assert.equal(formatTokens(3_400), '3.4k');
   assert.equal(formatTokens(980), '980');
