@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { Download, LoaderCircle } from "lucide-react";
+import { CloudDownload, Download, LoaderCircle } from "lucide-react";
 import { assetUrl } from "../store";
 import { fileGlyphKind, fileTypeLabel, formatSize } from "../lib/fileCards";
 import { FileCard } from "./FileCard";
@@ -113,8 +113,8 @@ function Attachment({ attachment, onOpen }: { attachment: ChatAttachment; onOpen
     </div>
       : <FileCard name={name} detail={detail} kind={fileGlyphKind(attachment.name)} onOpen={attachment.fileKind === "image" ? open : onOpen} buttonRef={ref}>
         <button type="button" onClick={download} disabled={downloadState === "preparing"} aria-label={`Download ${attachment.name}`} title={`Download ${attachment.name}`}
-          className="grid size-9 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50">
-          {downloadState === "preparing" ? <LoaderCircle size={15} aria-hidden="true" className="animate-spin" /> : <Download size={15} aria-hidden="true" />}
+          className="grid size-[18px] place-items-center rounded-full text-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50">
+          {downloadState === "preparing" ? <LoaderCircle size={18} aria-hidden="true" className="animate-spin" /> : <CloudDownload size={18} aria-hidden="true" />}
         </button>
       </FileCard>}
     {downloadState === "error" && <p role="alert" className="px-2 pt-1 text-[12px] text-muted">Couldn't download. Try again.</p>}

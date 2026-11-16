@@ -285,7 +285,7 @@ test('Markdown file contents use the signed response and resolve links relative 
   fetchResponse = () => new Response('<html>Nested report</html>', { status: 200 });
   await click(document.querySelector('button[aria-label="Open Nested report"]'));
   assert.ok(document.querySelector('iframe'));
-  assert.deepEqual(calls.filter((call) => call.tag === 'assets.createUrl').map((call) => call.payload.resource.path), ['library/index.md', 'library/report.html']);
+  assert.deepEqual([...new Set(calls.filter((call) => call.tag === 'assets.createUrl').map((call) => call.payload.resource.path))], ['library/index.md', 'library/report.html']);
   assert.equal(calls.some((call) => call.tag === 'projects.readFile'), false);
 });
 

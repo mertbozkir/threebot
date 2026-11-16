@@ -1,13 +1,11 @@
-import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import { Pause, Play } from "lucide-react";
-import { FileCard as DocumentCard, FileGlyph } from "./FileCard";
+import { FileCard as DocumentCard, FileGlyph, useFileSize, useWorkspaceAssetUrl } from "./FileCard";
 import { useOpenImage, type ViewerImage } from "./ImageViewer";
 import { WorkspaceFileContext } from "./WorkspaceResource";
-import { workspaceAssetUrl } from "../lib/workspaceAssets";
-import { workspaceClient } from "../lib/workspaceTransport";
 import { workspaceLinkPath } from "../lib/workspaceLinks";
 import {
-  fileGlyphKind, fileTypeLabel, mediaDuration, mediaFileKind, mediaRowTiles,
+  fileGlyphKind, fileTypeLabel, formatSize, mediaDuration, mediaFileKind, mediaRowTiles,
   messageFileLinks, soloMarkdownLink, stackPage, type MessageFileLink,
 } from "../lib/fileCards";
 import { splitBubbles } from "../lib/chatBehavior";
@@ -16,33 +14,25 @@ function linkName(link: MessageFileLink): string {
   return link.text.trim() || link.path.split("/").at(-1) || link.path;
 }
 
-function useWorkspaceAsset(path: string): string | null {
-  const workspace = useContext(WorkspaceFileContext);
-  const threadId = workspace?.threadId ?? null;
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    setUrl(null);
-    if (!threadId) return;
-    let live = true;
-    Promise.resolve().then(() => { workspaceClient(threadId); return workspaceAssetUrl({ _tag: "workspace-file", threadId, path }); })
-      .then((signed) => { if (live) setUrl(signed); })
-      .catch(() => {});
-    return () => { live = false; };
-  }, [threadId, path]);
-  return url;
+const WAVE_BARS = 44;
+
+function waveBars(name: string): number[] {
+  let seed = 0;
+  for (let index = 0; index < name.length; index++) seed = (seed * 31 + name.charCodeAt(index)) >>> 0;
+  return Array.from({ length: WAVE_BARS }, (_, index) => 4 + Math.abs((Math.sin(seed + index * 12.9898) * 43758.5453) % 1) * 12);
 }
 
-const WAVE_BARS = 40;
-
 function AudioFileCard({ link }: { link: MessageFileLink }) {
-  const url = useWorkspaceAsset(link.path);
+  const url = useWorkspaceAssetUrl(link.path);
+  const size = useFileSize(link.path, url);
   const audio = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [rate, setRate] = useState(1);
   const [seconds, setSeconds] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  const bars = useMemo(() => Array.from({ length: WAVE_BARS }, (_, index) => 5 + Math.abs((Math.sin(index * 12.9898) * 43758.5453) % 1) * 13), []);
+  const bars = useMemo(() => waveBars(linkName(link)), [link]);
   const progress = seconds ? Math.min(1, elapsed / seconds) : 0;
+  const detail = [seconds !== null ? mediaDuration(seconds) : null, size !== null ? formatSize(size) : null].filter(Boolean).join(" · ") || "Audio";
   const toggle = () => {
     const element = audio.current;
     if (!element) return;
@@ -55,27 +45,27 @@ function AudioFileCard({ link }: { link: MessageFileLink }) {
     if (audio.current) audio.current.playbackRate = next;
   };
   return (
-    <div className="flex w-[360px] max-w-full flex-col gap-2.5 rounded-[18px] border border-line bg-card py-3 pr-4 pl-3">
-      <div className="flex items-center gap-3">
+    <div className="flex h-[120px] w-[355px] min-w-0 max-w-full flex-col justify-center gap-[15px] rounded-[18px] border border-file-card-border bg-file-card-bg pr-6 pl-5">
+      <div className="flex items-center gap-[13px]">
         <FileGlyph kind="audio" />
         <span className="min-w-0">
           <span className="block truncate text-[15px] leading-5">{linkName(link)}</span>
-          <span className="block truncate text-[13px] leading-4 text-muted">{seconds !== null ? mediaDuration(seconds) : "Audio"}</span>
+          <span className="mt-[2px] block truncate text-[13px] leading-4 text-muted">{detail}</span>
         </span>
       </div>
-      <div className="flex items-center gap-2">
-        <span className="flex h-8 shrink-0 items-center overflow-hidden rounded-full border border-line">
-          <button type="button" onClick={toggle} aria-label={playing ? "Pause" : "Play"} className="grid h-full w-9 place-items-center hover:bg-hover">
-            {playing ? <Pause size={13} fill="currentColor" /> : <Play size={13} fill="currentColor" className="ml-0.5" />}
+      <div className="flex items-center gap-3">
+        <span className="flex h-9 shrink-0 items-center overflow-hidden rounded-full bg-hover">
+          <button type="button" onClick={toggle} aria-label={playing ? "Pause" : "Play"} className="grid h-full w-10 place-items-center">
+            {playing ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" className="ml-0.5" />}
           </button>
-          <button type="button" onClick={cycleRate} aria-label="Playback speed" title="Playback speed" className="h-full border-l border-line px-2 text-[12px] font-medium tabular-nums">{rate}×</button>
+          <button type="button" onClick={cycleRate} aria-label="Playback speed" title="Playback speed" className="h-full border-l border-line px-2.5 text-[13px] font-medium tabular-nums">{rate}×</button>
         </span>
-        <span className="flex min-w-0 flex-1 items-center gap-[2px]" aria-hidden="true">
+        <span className="flex min-w-0 flex-1 items-center gap-[3px]" aria-hidden="true">
           {bars.map((height, index) => (
-            <span key={index} className={`w-[2.5px] shrink-0 rounded-full ${index / WAVE_BARS < progress ? "bg-fg" : "bg-fg/25"}`} style={{ height }} />
+            <span key={index} className={`w-[2px] shrink-0 rounded-full ${index / WAVE_BARS < progress ? "bg-fg" : "bg-fg/25"}`} style={{ height }} />
           ))}
         </span>
-        <span className="w-9 text-right text-[12px] tabular-nums text-muted">{mediaDuration(elapsed)}</span>
+        <span className="text-right text-[14px] tabular-nums text-muted">{mediaDuration(elapsed)}</span>
       </div>
       <audio ref={audio} src={url ?? undefined} preload="metadata" hidden
         onLoadedMetadata={(event) => setSeconds(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : null)}
@@ -90,7 +80,7 @@ function MediaTile({ file, overlay }: { file: MessageFileLink; overlay: number |
   const workspace = useContext(WorkspaceFileContext);
   const name = linkName(file);
   const image = mediaFileKind(file.path) === "image";
-  const url = useWorkspaceAsset(file.path);
+  const url = useWorkspaceAssetUrl(file.path);
   const [duration, setDuration] = useState<number | null>(null);
   const viewerImage: ViewerImage | null = image && workspace?.threadId
     ? { key: `workspace:${file.path}`, alt: name, name, resource: { _tag: "workspace-file", threadId: workspace.threadId, path: file.path } }
@@ -99,7 +89,7 @@ function MediaTile({ file, overlay }: { file: MessageFileLink; overlay: number |
   return (
     <>
       <button type="button" ref={ref} onClick={() => (image ? open() : workspace?.openFile(file.path))} aria-label={`Open ${name}`} title={name}
-        className="group relative h-[200px] min-w-0 flex-1 overflow-hidden rounded-2xl border border-line bg-card">
+        className={`relative h-[102px] overflow-hidden rounded-[12px] bg-card ${image ? "w-[204px]" : "w-[136px]"}`}>
         {image
           ? url && <img src={url} alt={name} draggable={false} className="h-full w-full object-cover" />
           : <>
@@ -110,7 +100,7 @@ function MediaTile({ file, overlay }: { file: MessageFileLink; overlay: number |
             </span>
             {duration !== null && <span className="absolute right-2 bottom-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[12px] text-white tabular-nums">{mediaDuration(duration)}</span>}
           </>}
-        {overlay !== null && <span className="absolute inset-0 grid place-items-center bg-black/45 text-[24px] font-semibold text-white">+{overlay}</span>}
+        {overlay !== null && <span className="absolute inset-0 grid place-items-center bg-black/40 text-[32px] font-semibold text-white">+{overlay}</span>}
       </button>
       {viewer}
     </>
@@ -130,7 +120,7 @@ function MediaRow({ files }: { files: MessageFileLink[] }) {
 
 function StackCard({ link }: { link: MessageFileLink }) {
   const workspace = useContext(WorkspaceFileContext);
-  return <DocumentCard name={linkName(link)} detail={fileTypeLabel(link.path)} kind={fileGlyphKind(link.path)} onOpen={() => workspace?.openFile(link.path)} />;
+  return <DocumentCard name={linkName(link)} detail={fileTypeLabel(link.path)} kind={fileGlyphKind(link.path)} workspacePath={link.path} onOpen={() => workspace?.openFile(link.path)} />;
 }
 
 /** The file cards of one bot message: every workspace-file link it contains, in order, under the text. */

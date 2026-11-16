@@ -31,6 +31,11 @@
   --switch-on: #1a73e8;
   --overlay: #00000080;
   --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.12);
+  --file-card-bg: #f1f1ef;
+  --file-card-border: rgb(19 17 34 / 0.05);
+  --file-card-tile: #d6d6d3;
+  --file-card-line: #a9a9a6;
+  --file-card-grid: #bfbfbc;
   color-scheme: light;
 }
 
@@ -61,6 +66,11 @@
   --overlay: #000000b2;
   --shadow-pop: 0 0 0 0.5px #f2f0fb21;
   --merged: #a371f7;
+  --file-card-bg: color-mix(in srgb, #ffffff 8%, var(--bg-chat));
+  --file-card-border: rgb(255 255 255 / 0.04);
+  --file-card-tile: #343434;
+  --file-card-line: #626262;
+  --file-card-grid: #4a4a4a;
   color-scheme: dark;
 }
 
@@ -92,6 +102,11 @@
   --color-pill: var(--pill);
   --color-pill-fg: var(--pill-fg);
   --color-pill-soft: var(--pill-soft);
+  --color-file-card-bg: var(--file-card-bg);
+  --color-file-card-border: var(--file-card-border);
+  --color-file-card-tile: var(--file-card-tile);
+  --color-file-card-line: var(--file-card-line);
+  --color-file-card-grid: var(--file-card-grid);
 }
 
 html,

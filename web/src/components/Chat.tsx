@@ -344,7 +344,7 @@ function MessageParagraph({ node, children }: ComponentPropsWithoutRef<"p"> & Ex
   const solo = workspace && node ? soloFileLinkParagraph(node, (href) => workspaceLinkPath(href, workspace.workspaceRoot, workspace.fromPath)) : null;
   if (!solo || !workspace) return <p>{children}</p>;
   const name = solo.text.trim() || solo.path.split("/").at(-1) || solo.path;
-  return <DocumentCard name={name} detail={fileTypeLabel(solo.path)} kind={fileGlyphKind(solo.path)} onOpen={() => workspace.openFile(solo.path)} />;
+  return <DocumentCard name={name} detail={fileTypeLabel(solo.path)} kind={fileGlyphKind(solo.path)} workspacePath={solo.path} onOpen={() => workspace.openFile(solo.path)} />;
 }
 
 /** Links to the user's Executor (sign-in links Bots post) render as Connect cards. */

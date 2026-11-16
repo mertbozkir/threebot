@@ -1,10 +1,10 @@
 export type FileCardAccent = "pdf" | "sheet" | "doc" | "slides" | "other";
 
 export const FILE_CARD_COLORS: Record<FileCardAccent, string> = {
-  pdf: "#ff3b47",
-  sheet: "#19c46e",
-  doc: "#1d8cff",
-  slides: "#ff6a13",
+  pdf: "#fc2d3e",
+  sheet: "#14c370",
+  doc: "#1784fc",
+  slides: "#fa6710",
   other: "#98989d",
 };
 
@@ -53,6 +53,27 @@ export function formatSize(bytes: number | null): string | null {
   let unit = -1;
   do { value /= 1024; unit++; } while (value >= 1024 && unit < units.length - 1);
   return `${Number(value.toFixed(1))}${units[unit]}`;
+}
+
+/** Content-Length probes in flight or resolved, keyed by workspace file, so a card fetches its size once. */
+export const fileSizeCache = new Map<string, Promise<number | null>>();
+
+/** Probe a size at most once per key; a failed probe resolves to null and stays cached. */
+export function cachedFileSize(key: string, probe: () => Promise<number | null>): Promise<number | null> {
+  const cached = fileSizeCache.get(key);
+  if (cached) return cached;
+  const pending = probe().catch(() => null);
+  fileSizeCache.set(key, pending);
+  return pending;
+}
+
+/** HEAD a signed asset URL and read its Content-Length; null when the size is unavailable. */
+export function fileSizeFromHead(url: string): Promise<number | null> {
+  return fetch(url, { method: "HEAD" }).then((response) => {
+    const header = response.ok ? response.headers.get("Content-Length") : null;
+    const length = Number(header);
+    return header !== null && Number.isFinite(length) && length >= 0 ? length : null;
+  }, () => null);
 }
 
 export function aboutFilePrompt(fileName: string, workspacePath: string | null | undefined, text: string): string {
