@@ -734,6 +734,31 @@ test("Vault repeated phones and emails make primary, remove and save ordered val
   assert.deepEqual(saved.emails,["second@example.invalid","first@example.invalid"]); assert.equal(saved.email,"second@example.invalid");
 });
 
+test("Beta: the Computer's Runs on choice and SSH host save through settings", async () => {
+  settings.beta = { projects: false, desktop: true };
+  useApp.setState({ settingsPane: "beta", settings }); await render();
+  assert.equal(labeled<HTMLSelectElement>("Runs on").value, "mac");
+  await select("Runs on", "ssh");
+  const host = labeled<HTMLInputElement>("SSH host");
+  assert.equal(host.placeholder, "a host from your ~/.ssh/config");
+  await input(host, "build-box");
+  await click(button("Save"));
+  assert.deepEqual(settings.computer, { where: "ssh", host: "build-box" });
+  handleRequest = (url, init) => init.method === "PUT"
+    ? Response.json({ error: "computer.where must be \"mac\" or \"ssh\"" }, { status: 400 })
+    : Response.json(settings);
+  await input(labeled<HTMLInputElement>("SSH host"), "other-box");
+  await click(button("Save"));
+  assert.match(document.querySelector('[role="alert"]').textContent, /must be "mac" or "ssh"/);
+  assert.deepEqual(settings.computer, { where: "ssh", host: "build-box" });
+  handleRequest = async (url, init) => {
+    if (url === "/api/settings") { if (init.method === "PUT") settings = { ...settings, ...JSON.parse(init.body) }; return Response.json(settings); }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  await select("Runs on", "mac");
+  assert.deepEqual(settings.computer, { where: "mac" });
+});
+
 test("Bot CSV import retains ordered repeatable fields and skips malformed arrays", () => {
   const csvCell=value=>'"'+value.replaceAll('"','""')+'"';
   const websites=["https://first.invalid","https://second.invalid"];
