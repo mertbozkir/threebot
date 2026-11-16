@@ -8,7 +8,7 @@ import { accountsFromBuckets, createUsageLedger, providerForSourcePath, turnsFro
 const NOW = Date.parse("2026-11-16T12:00:00Z");
 const tokens = { inputTokens: 10, cachedInputTokens: 2, cacheCreationTokens: 1, outputTokens: 5, models: ["model-a"] };
 const projection = (over: Partial<UsageProjection> = {}): UsageProjection => ({
-  threadId: "th1",
+  thread: { id: "th1" },
   providerTurns: [{ id: "t1", runAttemptId: "a1", completedAt: "2026-11-16T10:00:00Z", turnTokenUsage: { ...tokens } }],
   messages: [{ id: "msg1", createdBy: "user" }],
   attempts: [{ id: "a1", runId: "r1" }],
@@ -52,10 +52,11 @@ test("the turn's reported model wins, then the run's, then unknown", () => {
 
 test("subagent usage rides on the turn's counts, junk ignored", () => {
   const withOther = turnsFromProjection(projection({ providerTurns: [{ id: "t1", runAttemptId: "a1", completedAt: "2026-11-16T10:00:00Z", turnTokenUsage: { ...tokens, otherUsage: { inputTokens: 7, outputTokens: 3 } } }] }), { bot: "s" })[0]!;
-  assert.deepEqual([withOther.input, withOther.output], [17, 8]);
+  // inputTokens 10 include 2 cached and 1 cache write, so 7 are uncached; the subagent adds 7.
+  assert.deepEqual([withOther.input, withOther.output], [14, 8]);
   assert.deepEqual([withOther.cached, withOther.cacheWrite], [2, 1]);
   const badOther = turnsFromProjection(projection({ providerTurns: [{ id: "t1", runAttemptId: "a1", completedAt: "2026-11-16T10:00:00Z", turnTokenUsage: { ...tokens, otherUsage: { inputTokens: -4, outputTokens: "3" } } }] }), { bot: "s" })[0]!;
-  assert.deepEqual([badOther.input, badOther.output], [10, 5]);
+  assert.deepEqual([badOther.input, badOther.output], [7, 5]);
 });
 
 test("malformed turns and counts are ignored, not guessed", () => {
@@ -71,7 +72,7 @@ test("malformed turns and counts are ignored, not guessed", () => {
   assert.equal(entries.length, 1);
   assert.deepEqual([entries[0]!.input, entries[0]!.cached, entries[0]!.cacheWrite, entries[0]!.output], [0, 0, 0, 0]);
   assert.equal(entries[0]!.key, "th1:ok");
-  assert.deepEqual(turnsFromProjection(projection({ threadId: undefined }), { bot: "s" }), []);
+  assert.deepEqual(turnsFromProjection(projection({ thread: undefined }), { bot: "s" }), []);
   assert.deepEqual(turnsFromProjection(projection({ providerTurns: null }), { bot: "s" }), []);
   assert.deepEqual(turnsFromProjection(null, { bot: "s" }), []);
 });
@@ -169,10 +170,10 @@ test("transcript roots map to provider labels, never to a path", () => {
 
 test("usage-summary buckets become per-account totals without their paths", () => {
   const accounts = accountsFromBuckets([
-    { sourcePath: "/home/u/.claude/projects/abc", inputTokens: 10, cachedInputTokens: 2, cacheCreationTokens: 1, outputTokens: 5, costUsd: 0.5 },
-    { sourcePath: "/home/u/.claude/projects/def", inputTokens: 4, outputTokens: 1, costUsd: 0.25 },
-    { provider: "gemini", inputTokens: 3, outputTokens: 2, costUsd: -1 },
-    { provider: "   ", inputTokens: 1 },
+    { sourcePath: "/home/u/.claude/projects/abc", totals: { uncachedInputTokens: 10, cachedInputTokens: 2, cacheCreationTokens: 1, outputTokens: 5 }, costUsd: 0.5 },
+    { sourcePath: "/home/u/.claude/projects/def", totals: { uncachedInputTokens: 4, outputTokens: 1 }, costUsd: 0.25 },
+    { provider: "gemini", totals: { uncachedInputTokens: 3, outputTokens: 2 }, costUsd: -1 },
+    { provider: "   ", totals: { uncachedInputTokens: 1 } },
     "junk",
   ], "/home/u");
   assert.deepEqual(accounts, [

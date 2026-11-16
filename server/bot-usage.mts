@@ -13,6 +13,7 @@ export type UsageLedgerFile = { version: 1; since: string; seen: string[]; entri
 // The parts of T3's `orchestration.getThreadProjection` result read here (same turns as telemetry.mts,
 // plus the message/run fields that tell a routine or another Bot from the person).
 export type UsageProjection = {
+  thread?: { id?: unknown } | null;
   threadId?: unknown;
   providerTurns?: { id?: unknown; runAttemptId?: unknown; completedAt?: unknown; turnTokenUsage?: unknown }[] | null;
   messages?: { id?: unknown; scheduledTaskId?: unknown; createdBy?: unknown; creationSource?: unknown }[] | null;
@@ -52,7 +53,7 @@ export function usageDays(days: number, timeZone: string | undefined, now = Date
  */
 export function turnsFromProjection(projection: UsageProjection | null | undefined, { bot, timeZone }: { bot: string; timeZone?: string }): UsageEntry[] {
   if (!projection || !Array.isArray(projection.providerTurns)) return [];
-  const threadId = text(projection.threadId, 200);
+  const threadId = text(projection.thread?.id, 200) ?? text(projection.threadId, 200);
   if (!threadId) return [];
   const runOfAttempt = new Map((projection.attempts ?? []).map((attempt) => [text(attempt.id, 200), text(attempt.runId, 200)]).filter(([id]) => id) as [string, string | null][]);
   const runOfId = new Map((projection.runs ?? []).map((run) => [text(run.id, 200), run]).filter(([id]) => id) as [string, NonNullable<UsageProjection["runs"]>[number]][]);
@@ -77,7 +78,8 @@ export function turnsFromProjection(projection: UsageProjection | null | undefin
     const id = text(turn.id, 200) ?? `${attemptId ?? ""}:${completedAt}`;
     entries.push({
       key: `${threadId}:${id}`, day: dayIn(timeZone, Date.parse(completedAt)), bot: bot.slice(0, 100), source, model,
-      input: count(u.inputTokens) + count(u.otherUsage?.inputTokens),
+      // T3's inputTokens already include cache reads and writes; `input` is the uncached part, as in T3's usage summary.
+      input: Math.max(0, count(u.inputTokens) - count(u.cachedInputTokens) - count(u.cacheCreationTokens)) + count(u.otherUsage?.inputTokens),
       cached: count(u.cachedInputTokens), cacheWrite: count(u.cacheCreationTokens),
       output: count(u.outputTokens) + count(u.otherUsage?.outputTokens),
     });
@@ -178,10 +180,11 @@ export function accountsFromBuckets(buckets: unknown, home: string = homedir()):
   const totals = new Map<string, AccountUsage>();
   for (const bucket of Array.isArray(buckets) ? buckets : []) {
     if (!bucket || typeof bucket !== "object") continue;
-    const b = bucket as { sourcePath?: unknown; provider?: unknown; inputTokens?: unknown; cachedInputTokens?: unknown; cacheCreationTokens?: unknown; outputTokens?: unknown; costUsd?: unknown };
+    const b = bucket as { sourcePath?: unknown; provider?: unknown; costUsd?: unknown; totals?: { uncachedInputTokens?: unknown; cachedInputTokens?: unknown; cacheCreationTokens?: unknown; outputTokens?: unknown } | null };
+    const t = b.totals ?? {};
     const account = providerForSourcePath(b.sourcePath, home) ?? (typeof b.provider === "string" && b.provider.trim() ? b.provider.trim().slice(0, 60) : "Unknown");
     const row = totals.get(account) ?? { account, input: 0, cached: 0, cacheWrite: 0, output: 0, costUsd: 0 };
-    row.input += num(b.inputTokens); row.cached += num(b.cachedInputTokens); row.cacheWrite += num(b.cacheCreationTokens); row.output += num(b.outputTokens); row.costUsd += num(b.costUsd);
+    row.input += num(t.uncachedInputTokens); row.cached += num(t.cachedInputTokens); row.cacheWrite += num(t.cacheCreationTokens); row.output += num(t.outputTokens); row.costUsd += num(b.costUsd);
     totals.set(account, row);
   }
   return [...totals.values()];
