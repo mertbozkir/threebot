@@ -265,10 +265,26 @@ test("the viewer opens a workbook through the media-file download route and draw
   assert.equal(document.querySelectorAll(".office-grid tbody tr").length, 1000);
   assert.deepEqual([...document.querySelectorAll(".office-grid tbody tr")].at(-1).textContent, "10001000");
   assert.match(document.querySelector(".office-note").textContent, /Showing the first 1,000 rows/);
-  assert.equal(document.querySelector('[role="dialog"] a').textContent, "Open original file");
+  assert.equal(document.querySelector(".workspace-file-rows").textContent, "1,000+ rows");
+  assert.equal(document.querySelector('[role="dialog"] a').getAttribute("href"), "/t3/assets/signed-1");
   await act(async () => { tabs[1].click(); });
   assert.match(document.querySelector('[role="dialog"]').textContent, /This sheet is empty/);
   assert.equal(document.querySelector(".office-note"), null);
+  assert.equal(document.querySelector(".workspace-file-rows").textContent, "0 rows");
+});
+
+test("an Office file opens in the full-window page sheet with a file-name chip, row count, download and close in the header", async () => {
+  body = xlsx({ sheet1: `<worksheet xmlns="${S}"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Number</t></is></c></row><row r="2"><c r="A2"><v>1</v></c></row><row r="3"><c r="A3"><v>2</v></c></row><row r="4"><c r="A4"><v>3</v></c></row></sheetData></worksheet>` });
+  await open("library/rows.xlsx");
+  const dialog = document.querySelector('[role="dialog"]') as HTMLElement;
+  assert.ok(dialog.classList.contains("workspace-page-sheet"), "opens in the full-window page sheet");
+  const header = dialog.querySelector(".bot-modal-header") as HTMLElement;
+  assert.equal(header.querySelector(".workspace-file-chip").textContent, "rows.xlsx");
+  assert.equal(header.querySelector(".workspace-file-rows").textContent, "4 rows");
+  const download = header.querySelector('a[aria-label="Download original file"]') as HTMLAnchorElement;
+  assert.equal(download.getAttribute("href"), "/t3/assets/signed-1");
+  assert.equal(download.getAttribute("target"), "_blank");
+  assert.ok(header.querySelector('button[aria-label="Close"]'));
 });
 
 test("the viewer draws a document as headings, paragraphs, lists, tables and a blob image, with RTL direction", async () => {

@@ -1,11 +1,12 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { Download, ZoomIn, ZoomOut } from "lucide-react";
 import { workspaceAssetUrl } from "../lib/workspaceAssets";
 import { workspaceFileKind, workspaceLinkPath, type LibraryResource } from "../lib/workspaceLinks";
 import { workspaceClient } from "../lib/workspaceTransport";
 import { themedWorkspacePage } from "../lib/workspacePage";
 import { parseCsv } from "../lib/vaultCsv";
 import { useApp } from "../store";
-import { Modal } from "./ui";
+import { IconButton, Modal } from "./ui";
 import { ImageViewer, useOpenImage, type ViewerImage } from "./ImageViewer";
 import PdfDocument from "./PdfDocument";
 import OfficeDocument from "./OfficeDocument";
@@ -63,6 +64,8 @@ function reportResourceFailure(stage: string, resource: LibraryResource | null, 
 
 type ResourceViewerProps = { scopeThreadId?: string | null; resource: LibraryResource | null; title: string; fileKind?: ReturnType<typeof workspaceFileKind>; onClose: () => void; renderText?: (text: string) => ReactNode };
 
+const PDF_ZOOM_PERCENT = { min: 50, max: 200, step: 25 };
+
 /** Use T3's signed resource endpoint for reads and previews, retaining the mounted conversation. Images open full screen. */
 export function WorkspaceResourceViewer(props: ResourceViewerProps) {
   const workspaceContext = useContext(WorkspaceFileContext);
@@ -80,6 +83,9 @@ function ResourceSheet({ resource, title, fileKind, onClose, renderText, scopeTh
   useEffect(() => { const observer = new window.MutationObserver(() => setDark(document.documentElement.classList.contains("dark"))); observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] }); return () => observer.disconnect(); }, []);
   const [state, setState] = useState<ResourceState>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
+  const [zoomPercent, setZoomPercent] = useState(100);
+  const [rowCount, setRowCount] = useState<{ count: number; truncated: boolean } | null>(null);
+  const reportRows = useCallback((count: number, truncated: boolean) => setRowCount({ count, truncated }), []);
   const resolvedFileKind = fileKind ?? workspaceFileKind(resource?._tag === "workspace-file" ? resource.path : title);
   const resourceKey = JSON.stringify(resource);
   useEffect(() => {
@@ -88,6 +94,8 @@ function ResourceSheet({ resource, title, fileKind, onClose, renderText, scopeTh
     const controller = new AbortController();
     let stage = "sign";
     setState({ kind: "loading" });
+    setRowCount(null);
+    setZoomPercent(100);
     (async () => {
       if (resource._tag === "workspace-file") workspaceClient(resource.threadId);
       const url = await workspaceAssetUrl(resource, ownerThreadId);
@@ -118,24 +126,34 @@ function ResourceSheet({ resource, title, fileKind, onClose, renderText, scopeTh
     return () => { live = false; controller.abort(); };
   // Resource identity is stable even when callers construct a fresh object on render.
   }, [resourceKey, resolvedFileKind, attempt, ownerThreadId]);
-  // The file loaded but couldn't be shown here: keep its link so it can still be opened.
   const failed = (error: unknown) => { reportResourceFailure("render", resource, resolvedFileKind, error); setState((current) => ({ kind: "error", url: current.kind === "ready" ? current.url : undefined })); };
   const original = state.kind === "ready" ? state.url : state.kind === "error" ? state.url : undefined;
-  return <Modal backdropClassName={resolvedFileKind === "html" ? "workspace-page-backdrop" : undefined} backdropStyle={resolvedFileKind === "html" ? { left: sidebarWidth } : undefined} title={title} onClose={onClose} className={`workspace-resource-sheet h-[85dvh] w-full max-w-[1100px] ${resolvedFileKind === "html" ? "workspace-page-sheet" : ""} ${resolvedFileKind === "html" || /\.csv$/i.test(title) ? "workspace-document-sheet" : ""}`}>
+  const rowsLabel = rowCount && (rowCount.truncated ? "1,000+ rows" : `${rowCount.count.toLocaleString("en-US")} ${rowCount.count === 1 ? "row" : "rows"}`);
+  const headerActions = <div className="workspace-file-actions">
+    {resolvedFileKind === "pdf" && state.kind === "ready" && (
+      <div role="group" aria-label="Zoom" className="workspace-zoom-pill">
+        <IconButton className="size-7" aria-label="Zoom out" disabled={zoomPercent <= PDF_ZOOM_PERCENT.min} onClick={() => setZoomPercent((value) => Math.max(PDF_ZOOM_PERCENT.min, value - PDF_ZOOM_PERCENT.step))}><ZoomOut size={15} /></IconButton>
+        <span aria-live="polite">{zoomPercent}%</span>
+        <IconButton className="size-7" aria-label="Zoom in" disabled={zoomPercent >= PDF_ZOOM_PERCENT.max} onClick={() => setZoomPercent((value) => Math.min(PDF_ZOOM_PERCENT.max, value + PDF_ZOOM_PERCENT.step))}><ZoomIn size={15} /></IconButton>
+      </div>
+    )}
+    {resolvedFileKind === "sheet" && rowsLabel && <span className="workspace-file-rows">{rowsLabel}</span>}
+    {original && <a href={original} target="_blank" rel="noreferrer" aria-label="Download original file" title="Download original file" className="grid size-8 shrink-0 place-items-center rounded-full text-muted transition-colors hover:bg-hover hover:text-fg"><Download size={16} /></a>}
+  </div>;
+  return <Modal backdropClassName="workspace-page-backdrop" backdropStyle={{ left: sidebarWidth }} title={<span className="workspace-file-chip" title={title}>{title}</span>} onClose={onClose} headerActions={headerActions} className={`workspace-resource-sheet workspace-page-sheet ${resolvedFileKind === "html" || /\.csv$/i.test(title) ? "workspace-document-sheet" : ""}`}>
     <div className="scroll-thin min-h-0 flex-1 overflow-auto">
       {state.kind === "loading" && <p role="status" className="p-6 text-center text-[14px] text-muted">Loading file…</p>}
       {state.kind === "error" && <div role="alert" className="p-6 text-center text-[14px] text-muted"><p>Couldn't open this file. It may be unavailable or access may have expired.</p><button className="mt-3 rounded-full bg-active px-4 py-2 text-fg" onClick={() => setAttempt((value) => value + 1)}>Retry</button></div>}
       {state.kind === "ready" && <>
         {resolvedFileKind === "audio" && <audio src={state.url} preload="metadata" controls aria-label={title} className="mx-auto my-6 max-w-full" onError={(event) => failed(new Error(`Media error ${event.currentTarget.error?.code ?? "unknown"}`))} />}
         {resolvedFileKind === "video" && <video src={state.url} preload="metadata" controls className="mx-auto max-h-full max-w-full" onError={(event) => failed(new Error(`Media error ${event.currentTarget.error?.code ?? "unknown"}`))} />}
-        {resolvedFileKind === "pdf" && state.bytes && <PdfDocument data={state.bytes} title={title} onError={failed} />}
-        {(resolvedFileKind === "sheet" || resolvedFileKind === "doc") && state.bytes && <OfficeDocument data={state.bytes} kind={resolvedFileKind} onError={failed} />}
+        {resolvedFileKind === "pdf" && state.bytes && <PdfDocument data={state.bytes} title={title} zoomPercent={zoomPercent} onError={failed} />}
+        {(resolvedFileKind === "sheet" || resolvedFileKind === "doc") && state.bytes && <OfficeDocument data={state.bytes} kind={resolvedFileKind} onError={failed} onRows={reportRows} />}
         {resolvedFileKind === "html" && <iframe src={state.url} srcDoc={state.content !== null ? themedWorkspacePage(state.content, dark) : undefined} title={title} sandbox="allow-scripts" className="size-full border-0 bg-white" onError={failed} />}
         {resolvedFileKind === "text" && state.content !== null && <div className="chat-file-content md mx-auto max-w-[760px] px-6 py-6 text-[14.5px] leading-[1.6]">{renderText ? renderText(state.content) : /\.csv$/i.test(title) ? <CsvPreview text={state.content} /> : <pre className="whitespace-pre-wrap break-words">{state.content}</pre>}</div>}
         {resolvedFileKind === "file" && <p className="p-6 text-center text-[14px] text-muted">Preview isn't available for this file.</p>}
       </>}
     </div>
-    {original && <div className="shrink-0 border-t border-line px-4 py-3"><a href={original} target="_blank" rel="noreferrer" className="text-[13px] underline">Open original file</a></div>}
   </Modal>;
 }
 

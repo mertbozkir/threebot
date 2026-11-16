@@ -4,7 +4,7 @@ import type { DocBlock, DocParagraph, DocRun, DocumentData, Workbook } from "../
 type Parsed = { kind: "sheet"; workbook: Workbook } | { kind: "doc"; document: DocumentData } | { kind: "refused"; message: string };
 
 /** Read-only .xlsx and .docx preview. A file the parser refuses explains why; the sheet keeps its original-file link. */
-export default function OfficeDocument({ data, kind, onError }: { data: ArrayBuffer; kind: "sheet" | "doc"; onError: (error: unknown) => void }) {
+export default function OfficeDocument({ data, kind, onError, onRows }: { data: ArrayBuffer; kind: "sheet" | "doc"; onError: (error: unknown) => void; onRows?: (count: number, truncated: boolean) => void }) {
   const [parsed, setParsed] = useState<Parsed | null>(null);
   useEffect(() => {
     let live = true;
@@ -23,7 +23,7 @@ export default function OfficeDocument({ data, kind, onError }: { data: ArrayBuf
   }, [data, kind]);
   if (!parsed) return <p role="status" className="p-6 text-center text-[14px] text-muted">Loading file…</p>;
   if (parsed.kind === "refused") return <p role="alert" className="p-6 text-center text-[14px] text-muted">{parsed.message}</p>;
-  return parsed.kind === "sheet" ? <SheetView workbook={parsed.workbook} /> : <DocumentView document={parsed.document} />;
+  return parsed.kind === "sheet" ? <SheetView workbook={parsed.workbook} onRows={onRows} /> : <DocumentView document={parsed.document} />;
 }
 
 function columnName(index: number) {
@@ -32,9 +32,10 @@ function columnName(index: number) {
   return name;
 }
 
-function SheetView({ workbook }: { workbook: Workbook }) {
+function SheetView({ workbook, onRows }: { workbook: Workbook; onRows?: (count: number, truncated: boolean) => void }) {
   const [index, setIndex] = useState(0);
   const sheet = workbook.sheets[index];
+  useEffect(() => { onRows?.(sheet?.rows.length ?? 0, !!sheet?.truncatedRows); }, [sheet, onRows]);
   if (!sheet) return <p className="p-6 text-center text-[14px] text-muted">This workbook has no sheets to show.</p>;
   const columns = Array.from({ length: sheet.columns }, (_, column) => columnName(column));
   const note = [sheet.truncatedRows && "the first 1,000 rows", sheet.truncatedColumns && "the first 100 columns"].filter(Boolean).join(" and ");
@@ -59,7 +60,7 @@ function DocumentView({ document }: { document: DocumentData }) {
     setImages(urls);
     return () => urls.forEach((url) => URL.revokeObjectURL(url));
   }, [document]);
-  return <article className="office-doc md mx-auto max-w-[760px] px-6 py-6 text-[14.5px] leading-[1.6]"><Blocks blocks={document.blocks} images={images} /></article>;
+  return <article className="office-doc md mx-auto max-w-[820px] px-6 py-8 text-[15px] leading-[1.65]"><Blocks blocks={document.blocks} images={images} /></article>;
 }
 
 function Blocks({ blocks, images }: { blocks: DocBlock[]; images: string[] }) {

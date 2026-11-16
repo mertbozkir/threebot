@@ -7,10 +7,12 @@ import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
  * WebKit (Safari, the Mac app) draws nothing for a PDF inside a frame.
  * The legacy build is deliberate: the modern one never finishes rendering in Safari 18 (measured).
  */
-export default function PdfDocument({ data, title, onError }: { data: ArrayBuffer; title: string; onError: (error: unknown) => void }) {
+const MAX_PAGE_CSS_WIDTH = 2400;
+
+export default function PdfDocument({ data, title, zoomPercent, onError }: { data: ArrayBuffer; title: string; zoomPercent: number; onError: (error: unknown) => void }) {
   const host = useRef<HTMLDivElement>(null);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
-  const [width, setWidth] = useState(0);
+  const [contentWidth, setContentWidth] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -31,14 +33,14 @@ export default function PdfDocument({ data, title, onError }: { data: ArrayBuffe
   useEffect(() => {
     const element = host.current;
     if (!element) return;
-    const observer = new window.ResizeObserver(([entry]) => setWidth(Math.floor(entry.contentRect.width)));
+    const observer = new window.ResizeObserver(([entry]) => setContentWidth(Math.floor(entry.contentRect.width)));
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
     const element = host.current;
-    if (!pdf || !element || width < 50) return;
+    if (!pdf || !element || contentWidth < 50) return;
     let live = true;
     const tasks: { cancel: () => void }[] = [];
     element.replaceChildren();
@@ -47,7 +49,8 @@ export default function PdfDocument({ data, title, onError }: { data: ArrayBuffe
         const page = await pdf.getPage(number);
         if (!live) return;
         const base = page.getViewport({ scale: 1 });
-        const viewport = page.getViewport({ scale: Math.min(width - 32, 1200) / base.width });
+        const fitScale = Math.min(contentWidth, MAX_PAGE_CSS_WIDTH) / base.width;
+        const viewport = page.getViewport({ scale: fitScale * (zoomPercent / 100) });
         const ratio = window.devicePixelRatio || 1;
         const canvas = document.createElement("canvas");
         canvas.width = Math.floor(viewport.width * ratio);
@@ -64,7 +67,7 @@ export default function PdfDocument({ data, title, onError }: { data: ArrayBuffe
       }
     })().catch((error: unknown) => { if (live) onError(error); });
     return () => { live = false; tasks.forEach((task) => task.cancel()); };
-  }, [pdf, width, title]);
+  }, [pdf, contentWidth, zoomPercent, title]);
 
-  return <div ref={host} className="pdf-document min-h-full bg-hover px-4 py-4" data-pages={pdf?.numPages ?? undefined} />;
+  return <div ref={host} className="pdf-document min-h-full px-[10px] py-4" data-pages={pdf?.numPages ?? undefined} />;
 }
