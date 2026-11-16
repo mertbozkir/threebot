@@ -101,6 +101,17 @@ function BotPointer({ activity, container }: { activity: DesktopStatus["activity
   </div>;
 }
 
+/** The Details thumbnail: the Bot's screen, watch-only, while the desktop is awake. */
+export function DesktopThumbnail({ bot }: { bot: Bot }) {
+  const { status, refresh } = useDesktopStatus(bot.slug);
+  const rfbRef = useRef<Rfb | null>(null);
+  const live = status?.state === "healthy" && status.display !== null;
+  return <button type="button" onClick={() => openDialog({ kind: "computer", slug: bot.slug })} className="relative flex aspect-[16/10] w-full overflow-hidden rounded-2xl border border-line bg-black text-left" aria-label={`Open ${bot.name}’s screen`}>
+    {live ? <div className="pointer-events-none flex w-full"><DesktopScreen slug={bot.slug} control={false} activity={status.activity} onDisconnect={() => void refresh()} rfbRef={rfbRef} /></div>
+      : <div className="grid w-full place-items-center text-center text-[13px] text-white/60"><div><Monitor size={22} className="mx-auto mb-2 opacity-60" />{status ? LABEL[status.state] : "Checking…"}</div></div>}
+  </button>;
+}
+
 function DesktopScreen({ slug, control, activity, onDisconnect, rfbRef }: { slug: string; control: boolean; activity: DesktopStatus["activity"]; onDisconnect: () => void; rfbRef: { current: Rfb | null } }) {
   const box = useRef<HTMLDivElement>(null);
   const [connected, setConnected] = useState(false);
@@ -127,7 +138,7 @@ function DesktopScreen({ slug, control, activity, onDisconnect, rfbRef }: { slug
     return () => { cancelled = true; document.removeEventListener("visibilitychange", hide); rfb?.disconnect(); rfbRef.current = null; };
   }, [slug, control]);
   return <div className="relative min-h-0 flex-1">
-    <div ref={box} className="absolute inset-0" aria-label={control ? "Desktop, you're in control" : "Desktop, watching"} />
+    <div ref={box} className={control ? "absolute inset-0" : "desktop-watch absolute inset-0"} aria-label={control ? "Desktop, you're in control" : "Desktop, watching"} />
     {!control && <BotPointer activity={activity} container={box} />}
     {!connected && <div className="pointer-events-none absolute inset-0 grid place-items-center"><Spinner size={20} /></div>}
   </div>;

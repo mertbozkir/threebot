@@ -166,7 +166,8 @@ export function createRfbClientFilter(mode: "watch" | "control") {
       case 3: return need(10); // FramebufferUpdateRequest
       case 4: return need(8); // KeyEvent
       case 5: return need(6); // PointerEvent
-      case 6: return buffer.length < 8 ? null : need(8 + buffer.readUInt32BE(4)); // ClientCutText
+      // ClientCutText; a negative length is the extended clipboard format, whose payload is -length bytes.
+      case 6: return buffer.length < 8 ? null : need(8 + Math.abs(buffer.readInt32BE(4)));
       case 150: return need(10); // EnableContinuousUpdates
       case 248: return buffer.length < 9 ? null : need(9 + buffer[8]); // ClientFence
       case 251: return buffer.length < 8 ? null : need(8 + 16 * buffer[6]); // SetDesktopSize

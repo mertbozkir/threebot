@@ -1188,3 +1188,6 @@ select optgroup {
 }
 
 .room-needs-you:hover { background: var(--bg-hover); }
+
+/* noVNC hides the local cursor over its canvas; a watcher has no remote cursor to follow, so keep the normal one. */
+.desktop-watch canvas { cursor: default !important; }
