@@ -75,5 +75,10 @@ test('limitGroups cards session and weekly windows together and the rest per pro
   assert.deepEqual(cards[0].rows, [{ provider: 'Codex', kind: 'codex', percent: 18, resetsAt: '2026-11-16T18:00:00Z' }, { provider: 'Claude (ngc)', kind: 'claudeAgent', percent: 21, resetsAt: null }]);
   assert.deepEqual(cards[1].rows.map((r) => r.provider), ['Codex', 'Claude (ngc)']);
   assert.deepEqual(cards[2].rows, [{ provider: 'Codex', kind: 'codex', percent: 40, resetsAt: null }]);
+  const named = limitGroups(parseProviderUsage({ providers: [{ instanceId: 'ngc', driver: 'claudeAgent', displayName: 'NGC', usageLimits: { windows: [
+    { id: 'w', label: 'Weekly', usedPercent: 50 }, { id: 'wf', label: 'Weekly · Fable', usedPercent: 3 }, { id: 'g', label: 'Go · Session', usedPercent: 1 }, { id: 'h', label: '5-hour', usedPercent: 2 },
+  ] } }] }));
+  assert.deepEqual(named.find((c) => c.title === 'Weekly limits')?.rows.map((r) => r.provider), ['NGC', 'NGC · Fable']);
+  assert.deepEqual(named.find((c) => c.title === 'Session limits')?.rows.map((r) => r.provider), ['NGC · Go', 'NGC']);
   assert.deepEqual(limitGroups([]), []);
 });

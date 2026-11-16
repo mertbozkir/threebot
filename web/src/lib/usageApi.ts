@@ -104,7 +104,9 @@ export type UsageLimitCard = { title: string; rows: UsageLimitRow[] };
 export function limitGroups(providers: readonly ProviderUsage[]): UsageLimitCard[] {
   const session: UsageLimitRow[] = [], weekly: UsageLimitRow[] = [], others = new Map<string, UsageLimitRow[]>();
   for (const provider of providers) for (const window of provider.windows) {
-    const row: UsageLimitRow = { provider: provider.name, kind: provider.kind, percent: window.percent, resetsAt: window.resetsAt };
+    // "Weekly · Fable" or "Go · Session" keep their extra words, so two windows of one provider stay apart.
+    const extra = window.label.split("·").map((part) => part.replace(/\b(this|current|rolling|session|weekly|week|monthly|month|daily|day|hourly|hour|\d+-hour|\d+h)\b/gi, "").trim()).filter(Boolean).join(" · ");
+    const row: UsageLimitRow = { provider: extra ? `${provider.name} · ${extra}` : provider.name, kind: provider.kind, percent: window.percent, resetsAt: window.resetsAt };
     const text = `${window.label} ${window.id}`.toLowerCase();
     if (/session|5h|hour/.test(text)) session.push(row);
     else if (text.includes("week")) weekly.push(row);
