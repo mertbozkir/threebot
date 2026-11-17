@@ -127,7 +127,7 @@ test('rooms read whole histories, and a history page from an older snapshot is d
   receive({ kind: 'snapshot', snapshotSequence: 20, historyCursor: 'c2', hasMoreHistory: true, projection: { thread: root, visibleTurnItems: [{ item: { id: 'x', type: 'assistant_message', text: 'x' } }], turnItems: [{ id: 'stop', type: 'run_interrupt_request' }], runs: [], subagents: [] } });
   assert.ok(useApp.getState().threadData.root.items.stop, 'interrupt requests kept only in turnItems survive');
   let answer;
-  globalThis.fetch = () => new Promise((resolve) => { answer = resolve; });
+  globalThis.fetch = () => new Promise<Response>((resolve) => { answer = resolve; });
   const pending = loadOlderMessages('root');
   receive({ kind: 'snapshot', snapshotSequence: 30, historyCursor: 'c3', hasMoreHistory: true, projection: { thread: root, visibleTurnItems: [], runs: [], subagents: [] } });
   answer(Response.json({ items: [{ item: { id: 'stale', type: 'assistant_message', text: 's' } }], nextCursor: null, hasMoreHistory: false }));

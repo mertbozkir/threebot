@@ -19,6 +19,7 @@ const { T3Client, T3RpcError, threadKey, threadTarget, environmentHttp } = await
 let sockets, reconnects;
 class Socket {
   static OPEN = 1;
+  static CLOSING = 2;
   readyState = 0;
   sent: unknown[] = [];
   url: string;
@@ -173,11 +174,9 @@ test("checkAlive closes a socket that doesn't answer a ping, and reconnects a cl
 test("checkAlive never replaces a socket that is still closing", () => {
   const client = new T3Client(); client.connect(); sockets[0].open();
   sockets[0].readyState = 2;
-  Socket.CLOSING = 2;
   client.checkAlive();
   assert.equal(sockets.length, 1, "the closing socket's own onclose reconnects");
   sockets[0].close();
   reconnects.at(-1)();
   assert.equal(sockets.length, 2);
-  delete Socket.CLOSING;
 });
