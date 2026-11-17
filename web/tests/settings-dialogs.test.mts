@@ -114,7 +114,7 @@ test("failed save shows status and retains the permission rule draft", async () 
   await render(); await click(button("Add Rule")); await input(document.querySelector("#permission-rule"), "Ask before deleting"); await click(button("Add rule"));
   assert.match(document.querySelector('[role="status"]').textContent, /Saving/); assert.equal(document.querySelector("fieldset").disabled, true);
   await act(async () => rejectRequest()); assert.match(document.querySelector('[role="alert"]').textContent, /Storage unavailable/);
-  assert.equal(document.querySelector("#permission-rule").value, "Ask before deleting"); assert.equal(document.querySelector("fieldset").disabled, false);
+  assert.equal(document.querySelector<HTMLInputElement>("#permission-rule")!.value, "Ask before deleting"); assert.equal(document.querySelector("fieldset").disabled, false);
 });
 
 test("permission add/edit/delete and Approvals save their values, editing inline", async () => {
@@ -683,9 +683,9 @@ test("Account and manual Time Zone open separate destinations, while automatic z
 test("Always Ask and Allow without Asking use their distinct editor examples and Cancel closes them", async () => {
   useApp.setState({ settingsPane: "permissions" }); await render();
   const add = () => [...document.querySelectorAll("button")].filter((button) => button.textContent.trim() === "Add Rule");
-  await click(add()[0]); assert.equal(document.querySelector("#permission-rule").placeholder, "Purchases over $50");
+  await click(add()[0]); assert.equal(document.querySelector<HTMLInputElement>("#permission-rule")!.placeholder, "Purchases over $50");
   await click(button("Cancel")); assert.equal(document.querySelector("#permission-rule"), null);
-  await click(add()[1]); assert.equal(document.querySelector("#permission-rule").placeholder, "Emails to my team at acme.com"); assert.equal(button("Add rule").disabled, true);
+  await click(add()[1]); assert.equal(document.querySelector<HTMLInputElement>("#permission-rule")!.placeholder, "Emails to my team at acme.com"); assert.equal(button("Add rule").disabled, true);
   await click(button("Cancel"));
   assert.equal(document.querySelector("#permission-rule"), null); assert.equal(document.querySelectorAll('[role="dialog"]').length, 1); assert.equal(requests.length, 0);
 });
