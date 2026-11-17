@@ -529,7 +529,8 @@ class RuntimeWork {
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     if (this.listeners.size === 1) {
-      this.reconnect = t3.onReconnect(this.open);
+      // A stream already sent on the new socket (queued before it opened) is live; don't open it twice.
+      this.reconnect = t3.onReconnect(() => { if (!this.stream?.live()) this.open(); });
       this.open();
     }
     return () => {
