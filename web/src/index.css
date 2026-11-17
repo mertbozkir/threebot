@@ -576,14 +576,13 @@ button {
 @container (max-width: 560px) {
   .settings-row { flex-direction: column; align-items: flex-start; }
 }
-.permissions-boundary { font-size: 12px; line-height: 18px; color: var(--fg-muted); margin-bottom: 18px; }
 .settings-rules-card { font-size: 14.5px; }
-.rule-editor-body { padding: 20px 16px; }
-.rule-editor-body label { display: block; margin: 8px 16px; font-size: 13px; color: var(--fg-muted); }
-.rule-editor-body textarea { width: 100%; background: var(--bg-card); border-radius: 18px; padding: 16px; resize: vertical; min-height: 108px; outline: none; font-size: 16px; }
-.rule-editor-body p { font-size: 13px; line-height: 18px; color: var(--fg-muted); margin: 10px 16px; }
-.rule-editor-footer { margin-top: auto; padding: 18px 18px max(24px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px; }
-.rule-editor-footer button { width: 100%; height: 46px; font-size: 16px; }
+.rule-editor { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px; }
+.rule-editor label { font-size: 14.5px; }
+.rule-editor input { height: 44px; width: 100%; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--bg-card-inner); padding-inline: 14px; font-size: 15px; outline: none; }
+.rule-editor input:focus { border-color: var(--fg-muted); }
+.rule-editor p { font-size: 13px; line-height: 18px; color: var(--fg-muted); }
+.rule-editor-actions { display: flex; justify-content: flex-end; gap: 8px; }
 /* Settings → Usage (docs/designs/bot-usage.md): limits cards and the Bot usage card. */
 :root { --usage-warn: #c27400; --usage-s1: #2a78d6; --usage-s2: #eda100; --usage-s3: #1baf7a; --usage-s4: #eb6834; }
 .dark { --usage-warn: #f0a63a; --usage-s1: #3987e5; --usage-s2: #c98500; --usage-s3: #199e70; --usage-s4: #d95926; }
@@ -792,13 +791,9 @@ button {
 .apps-row-copy small { line-height: 17px; }
 .new-bot-name { height: 57.143px; }
 .new-bot-sheet .dialog-footer > button:disabled { background: #8f8f8f; }
-.rule-editor-body textarea { height: 104px; min-height: 104px; resize: none; }
-.rule-editor-footer button { height: 48px; }
-.rule-editor-footer button:disabled { background: var(--bg-active); color: var(--fg-muted); opacity: 1; }
 .vault-hints-helper { color: var(--fg-muted); font-size: 13px; padding-inline: 18px; }
 @media (max-width: 760px), (pointer: coarse) and (max-width: 1024px) {
   .new-bot-sheet .new-bot-preview { padding-inline: 17.143px; }
-  .rule-editor-body { padding-inline: 17.143px; }
   .settings-home-row { height: 51.429px; min-height: 51.429px; padding-block: 12px; }
   .settings-home-row:has(.mt-1), .settings-home-row:has(.size-10) { height: 72px; min-height: 72px; padding-block: 11px; }
   .settings-home .settings-row { min-height: 89.524px; padding-block: 13.75px; }
@@ -824,7 +819,6 @@ button {
 @media (max-width: 760px), (pointer: coarse) and (max-width: 1024px) {
   .bot-modal-header, .settings-modal .bot-modal-header { min-height: 76px; padding-block: 16px; }
   .settings-modal .settings-content { padding-top: 13px; }
-  .settings-modal .settings-content:has(.permissions-boundary) { padding-top: 23px; }
   .connect-apps-sheet .apps-filters { padding-top: 22px; }
   .apps-search { bottom: max(36px, env(safe-area-inset-bottom)); }
   .vault-toolbar { bottom: max(36px, env(safe-area-inset-bottom)); }
@@ -832,9 +826,6 @@ button {
   .new-bot-sheet .avatar-picker { padding-top: 33.143px; }
   .new-bot-sheet .avatar-shapes { gap: 12px 10px; }
   .new-bot-sheet .dialog-footer { padding-bottom: max(36px, env(safe-area-inset-bottom)); }
-  .rule-editor-body { padding-top: 13.833px; }
-  .rule-editor-footer { padding-bottom: max(34px, env(safe-area-inset-bottom)); }
-  .rule-editor-footer button:last-child { color: var(--fg-muted); }
   .vault-contact-sheet .dialog-footer { padding-bottom: max(36px, env(safe-area-inset-bottom)); }
   .settings-home-row > .size-10 { background: #3a3552; border: 0; color: #c4c0d6; }
 }
