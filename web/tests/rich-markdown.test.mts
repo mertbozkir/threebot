@@ -69,6 +69,14 @@ test("actual parser renders dollar and backslash inline/display math with access
   assert.equal(document.querySelector(".md-code-block"), null);
 });
 
+test("two prices on one line stay text while inline math still renders", async () => {
+  await render("Groq costs about $36 for all 888 hours at $0.04/hour, or about $99 with large-v3. Area is $x^2$.");
+  const paragraph = document.querySelector("p");
+  assert.match(paragraph.textContent, /about \$36 for all 888 hours at \$0\.04\/hour, or about \$99 with large-v3/);
+  assert.equal(document.querySelectorAll(".katex").length, 1, "only the formula is math");
+  assert.match(document.querySelector(".katex annotation").textContent, /x\^2/);
+});
+
 test("code, GFM, Bot references and caller navigation survive the math extension", async () => {
   let clicked;
   await render("Ask @Beta. Keep `\\(x\\)` and `$cash$` literal. Price: $25.\n\n| Name | Value |\n| --- | --- |\n| sample | yes |\n\n```js\nconst value = '$x$ \\(x\\)';\n```\n\n```math\nx^2\n```", {
