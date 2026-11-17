@@ -1,0 +1,8 @@
+#!/bin/sh
+# Each screen has its own browser profile, so several Bots can browse at once.
+screen="${DISPLAY#:}"
+exec /usr/bin/chromium \
+  --no-first-run --no-default-browser-check --disable-dev-shm-usage --hide-crash-restore-bubble \
+  --disk-cache-size=104857600 \
+  --user-data-dir="$HOME/.config/browser/screen-$screen" \
+  --window-size=1280,800 "$@"

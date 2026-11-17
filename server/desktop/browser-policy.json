@@ -1,0 +1,8 @@
+{
+  "PasswordManagerEnabled": false,
+  "BrowserSignin": 0,
+  "DeveloperToolsAvailability": 2,
+  "DownloadRestrictions": 1,
+  "MetricsReportingEnabled": false,
+  "URLBlocklist": ["file://*", "chrome://inspect", "chrome://net-internals"]
+}

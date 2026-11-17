@@ -82,10 +82,11 @@ self.addEventListener("activate", (event) => {
     await Promise.all(replaced.map((key) => caches.delete(key)));
     await self.clients.claim();
     if (!replaced.length) return;
-    // Old windows have no update logic of their own. Drafts are stored locally,
-    // and earlier hashed assets stay on the server until this reload happens.
+    // Old windows have no update logic of their own, so reload them onto this build. Drafts are stored
+    // locally. Not awaited: the reload's own request waits for this worker to finish activating, so
+    // waiting for it here would deadlock and leave the window loading until a manual reload.
     const windows = await self.clients.matchAll({ type: "window" });
-    await Promise.allSettled(windows.map((client) => client.navigate(client.url)));
+    void Promise.allSettled(windows.map((client) => client.navigate(client.url)));
   })());
 });
 

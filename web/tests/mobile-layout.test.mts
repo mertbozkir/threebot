@@ -7,7 +7,7 @@ import { after, afterEach, beforeEach, test } from "node:test";
 import { MessageChannel } from "node:worker_threads";
 import { Window } from "happy-dom";
 import postcss, { type Declaration, type Rule } from "postcss";
-import { buildOnce, domWindow, entryChunk, isModule } from "./support.mts";
+import { buildOnce, domWindow, entryChunk, isModule, writeBundle } from "./support.mts";
 import { fileURLToPath } from "node:url";
 
 // DOM lifecycle and CSS conditions/declarations only: happy-dom does not prove
@@ -81,7 +81,7 @@ const bundle = await buildOnce({
 const entry = entryChunk(bundle);
 assert.ok(entry);
 const directory = await mkdtemp(join(tmpdir(), "bot-mobile-layout-"));
-const filename = join(directory, "components.mjs"); await writeFile(filename, entry.code);
+const filename = await writeBundle(bundle, directory, "components.mjs");
 const { createElement: h, act, createRoot, Shell, useNarrow, MOBILE_LAYOUT_QUERY, Details, useApp, t3 } = await import(pathToFileURL(filename).href);
 const sheets = await Promise.all(["index.css", "mobile-chat.css", "mobile-settings.css"].map(async (name) => ({
   name, css: postcss.parse(await readFile(join(src, name), "utf8")),

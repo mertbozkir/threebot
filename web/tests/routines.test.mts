@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MessageChannel } from 'node:worker_threads';
 import { Window } from 'happy-dom';
-import { buildOnce, domWindow, entryChunk, isModule } from './support.mts';
+import { buildOnce, domWindow, entryChunk, isModule, writeBundle } from './support.mts';
 const channels = []; globalThis.MessageChannel = class extends MessageChannel { constructor() { super(); channels.push(this); } };
 const window = domWindow(new Window({ url: 'http://routines.test' }));
 for (const key of ['window','document','navigator','HTMLElement','Element','Node','Event','MouseEvent','localStorage','requestAnimationFrame','cancelAnimationFrame','IntersectionObserver']) Object.defineProperty(globalThis,key,{configurable:true,value:window[key]});
