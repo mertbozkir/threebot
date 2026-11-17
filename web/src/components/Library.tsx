@@ -17,7 +17,7 @@ export function Library({ bot }: { bot: Bot }) {
   const [opened, setOpened] = useState<Exclude<LibraryEntry, { kind: "link" }> | null>(null);
   const [error, setError] = useState(false);
   const data = useApp((s) => bot.mainThreadId ? s.threadData[bot.mainThreadId] : undefined);
-  useEffect(() => { try { workspaceClient(bot.mainThreadId); return bot.mainThreadId ? watchThread(bot.mainThreadId) : undefined; } catch { return undefined; } }, [bot.mainThreadId]);
+  useEffect(() => { try { workspaceClient(bot.mainThreadId); return bot.mainThreadId ? watchThread(bot.mainThreadId, false) : undefined; } catch { return undefined; } }, [bot.mainThreadId]);
   useEffect(() => {
     setFiles(null); setError(false);
     let live = true;

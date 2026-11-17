@@ -13,7 +13,7 @@ export function BotExchange({ bot, other }: { bot: Bot; other: Bot }) {
   const scroller = useRef<HTMLDivElement>(null);
   const close = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    const cleanups = [bot.mainThreadId, other.mainThreadId].flatMap((id) => id ? [watchThread(id)] : []);
+    const cleanups = [bot.mainThreadId, other.mainThreadId].flatMap((id) => id ? [watchThread(id, false)] : []);
     const previousFocus = document.activeElement;
     close.current?.focus();
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !useApp.getState().dialog) openExchange(null); };

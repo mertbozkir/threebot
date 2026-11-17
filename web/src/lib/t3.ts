@@ -91,7 +91,7 @@ export class T3Client {
    * After the page was hidden or offline, the socket may be dead while still reading OPEN, and a
    * pending retry may be seconds away. Reconnect now, or close the socket if a ping gets no pong.
    */
-  checkAlive(timeoutMs = 3000) {
+  checkAlive(timeoutMs = 8000) {
     if (this.environmentId && this.state === "closed" && !this.checking) return this.connect();
     // Still closing: its onclose clears the old requests and reconnects; replacing it now would let that wipe the new socket's.
     if (this.ws?.readyState === WebSocket.CLOSING) { this.reconnectDelay = 0; return; }
