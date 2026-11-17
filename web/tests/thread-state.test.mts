@@ -136,3 +136,29 @@ test('rooms read whole histories, and a history page from an older snapshot is d
   globalThis.fetch = async () => Response.json([]);
   stopRoot();
 });
+
+test('a room opened on a thread its chat already reads bounded reopens it with the whole history', async () => {
+  useApp.setState({ threads: { root } });
+  const stopChat = watchThread('shared');
+  assert.equal(payloads.get('orchestration.subscribeThread').acceptBoundedSnapshot, true);
+  streams.get('orchestration.subscribeThread')({ kind: 'snapshot', snapshotSequence: 5, historyCursor: 'c', hasMoreHistory: true, projection: { thread: root, visibleTurnItems: [], runs: [], subagents: [] } });
+  const stopRoom = watchThread('shared', false);
+  const reopened = payloads.get('orchestration.subscribeThread');
+  assert.equal(reopened.acceptBoundedSnapshot, undefined, 'the room gets a full snapshot');
+  assert.equal(reopened.afterSequence, undefined, 'a partial thread is not resumed from its bounded sequence');
+  stopRoom();
+  stopChat();
+});
+
+test('a history page never merges rows that name another thread', async () => {
+  useApp.setState({ threads: { root } });
+  const stop = watchThread('root');
+  streams.get('orchestration.subscribeThread')({ kind: 'snapshot', snapshotSequence: 40, historyCursor: 'c4', hasMoreHistory: true, projection: { thread: root, visibleTurnItems: [], runs: [], subagents: [] } });
+  globalThis.fetch = async () => Response.json({ items: [{ item: { id: 'mine', threadId: 'root', type: 'assistant_message', text: 'a' } }, { item: { id: 'foreign', threadId: 'other', type: 'assistant_message', text: 'b' } }], nextCursor: null, hasMoreHistory: false });
+  assert.equal(await loadOlderMessages('root'), true);
+  const items = useApp.getState().threadData.root.items;
+  assert.ok(items.mine);
+  assert.equal(items.foreign, undefined);
+  globalThis.fetch = async () => Response.json([]);
+  stop();
+});

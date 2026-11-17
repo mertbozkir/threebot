@@ -516,7 +516,11 @@ export async function loadOlderMessages(threadId: string): Promise<boolean> {
     const target = threadTarget(threadId);
     const page = await environmentHttp<{ items?: { item: TurnItem }[]; nextCursor?: string | null; hasMoreHistory?: boolean }>(target.environmentId, `/api/orchestration/threads/${encodeURIComponent(target.threadId)}/history?cursor=${encodeURIComponent(data.historyCursor)}`);
     if (snapshotGenerations.get(threadId) !== generation) return false;
-    const older = Object.fromEntries((page.items ?? []).map(({ item }) => [item.id, item]));
+    // Only rows of this thread: a page that names another thread is never merged into it.
+    const older = Object.fromEntries((page.items ?? []).flatMap((row) => {
+      const item = row?.item;
+      return item && typeof item.id === "string" && (typeof item.threadId !== "string" || item.threadId === target.threadId) ? [[item.id, item]] : [];
+    }));
     if (page.hasMoreHistory !== true) completeThreads.add(threadId);
     patchThread(threadId, (d) => ({ ...d, items: { ...older, ...d.items }, historyCursor: page.nextCursor ?? null, hasMoreHistory: page.hasMoreHistory === true && typeof page.nextCursor === "string" }));
     return Object.keys(older).length > 0;
@@ -530,8 +534,15 @@ export async function loadOlderMessages(threadId: string): Promise<boolean> {
 
 export function watchThread(threadId: string, bounded = true) {
   const existing = threadSubs.get(threadId);
-  if (existing) existing.refs++;
-  else {
+  if (existing) {
+    existing.refs++;
+    // A room needs the whole history: a bounded stream already open on this thread (its chat) reopens with a full snapshot.
+    if (existing.bounded && !bounded) {
+      existing.handle.cancel();
+      existing.bounded = false;
+      existing.handle = subscribedThread(threadId, false);
+    }
+  } else {
     const environmentId = threadTarget(threadId).environmentId;
     if (environmentId && !environmentReconnects.has(environmentId)) {
       environmentReconnects.add(environmentId);
