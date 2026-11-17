@@ -131,7 +131,7 @@ function SettingsHome({ s, onApps, onSkills, onPane: pane }: { s: Settings; onAp
     </Group>
     <Group><SettingsHomeLink title="Connect apps" description="Search plugins" onClick={onApps} /></Group>
     <Group title="Bot">
-      <SettingsHomeLink title="Permissions" description={`${s.autoReview !== false ? "Auto-review on" : "Auto-review off"} · ${rules} rules`} onClick={() => pane("permissions")} />
+      <SettingsHomeLink title="Permissions" description={`${s.autoReview !== false ? "Auto-review" : "Full access"} · ${rules} rules`} onClick={() => pane("permissions")} />
       <Row title="Set Time Zone Automatically" desc="Use this device’s time zone in Bot settings."><Switch checked={!s.timezone} onChange={(auto) => save({ timezone: auto ? "" : timezone })} label="Set Time Zone Automatically" /></Row>
       <SettingsHomeLink title="Time Zone" detail={timezone} disabled={!s.timezone} onClick={() => pane("timezone")} />
       <SettingsHomeLink title="Models" description="Default, backup and avatar drawing models" onClick={() => pane("models")} />
@@ -303,6 +303,8 @@ function RuleList({ title, desc, rules, onChange }: { title: string; desc: strin
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
+  const placeholder = title === "Always Ask" ? "Purchases over $50" : "Emails to my team at acme.com";
+  const cancel = () => { setAdding(false); setEditing(null); };
   const commit = async () => {
     const v = draft.trim();
     if (!v || !(await onChange(editing === null ? [...rules, v] : rules.map((r, i) => (i === editing ? v : r))))) return;
@@ -321,23 +323,24 @@ function RuleList({ title, desc, rules, onChange }: { title: string; desc: strin
           Add Rule
         </Pill>
       </div>
-      <div className="settings-rules-card overflow-hidden rounded-[18px] border border-line bg-card">
-        {rules.length === 0 && <p className="px-5 py-3.5 text-muted">No rules yet</p>}
-        {rules.map((r, i) => <div key={i} className="group flex items-center gap-2 px-5 py-3.5 text-[14.5px]"><span className="settings-rule-text min-w-0 flex-1">{r}</span><IconButton className="settings-rule-actions" onClick={() => { setEditing(i); setDraft(r); setAdding(false); }} aria-label="Edit rule"><Pencil size={14} /></IconButton><IconButton className="settings-rule-actions" onClick={() => onChange(rules.filter((_, j) => j !== i))} aria-label="Delete rule"><Trash2 size={14} /></IconButton></div>)}
-      </div>
-      {(adding || editing !== null) && <Modal title={editing === null ? "New Rule" : "Edit Rule"} onBack={() => { setAdding(false); setEditing(null); }} onClose={() => { setAdding(false); setEditing(null); }} className="rule-editor-sheet w-[460px]">
-        <RuleEditor placeholder={title === "Always Ask" ? "Purchases over $50" : "Emails to my team at acme.com"} draft={draft} setDraft={setDraft} commit={commit} cancel={() => { setAdding(false); setEditing(null); }} />
-      </Modal>}
+      {rules.length > 0 && <div className="settings-rules-card overflow-hidden rounded-[18px] border border-line bg-card">
+        {rules.map((r, i) => editing === i
+          ? <RuleEditor key={i} placeholder={placeholder} draft={draft} setDraft={setDraft} commit={commit} cancel={cancel} saveLabel="Save" />
+          : <div key={i} className="group flex items-center gap-2 px-5 py-3.5 text-[14.5px]"><span className="settings-rule-text min-w-0 flex-1">{r}</span><IconButton className="settings-rule-actions" onClick={() => { setEditing(i); setDraft(r); setAdding(false); }} aria-label="Edit rule"><Pencil size={14} /></IconButton><IconButton className="settings-rule-actions" onClick={() => onChange(rules.filter((_, j) => j !== i))} aria-label="Delete rule"><Trash2 size={14} /></IconButton></div>)}
+      </div>}
+      {adding && <div className={clsx("overflow-hidden rounded-[18px] border border-line bg-card", rules.length > 0 && "mt-3")}><RuleEditor placeholder={placeholder} draft={draft} setDraft={setDraft} commit={commit} cancel={cancel} saveLabel="Add rule" /></div>}
     </div>
   );
 }
 
-function RuleEditor({ draft, setDraft, commit, cancel, placeholder }: { placeholder: string; draft: string; setDraft: (v: string) => void; commit: () => void; cancel: () => void }) {
+function RuleEditor({ draft, setDraft, commit, cancel, placeholder, saveLabel }: { placeholder: string; draft: string; setDraft: (v: string) => void; commit: () => void; cancel: () => void; saveLabel: string }) {
   return (
-    <>
-      <div className="rule-editor-body"><label htmlFor="permission-rule">Applies to</label><textarea id="permission-rule" autoFocus value={draft} maxLength={1000} onChange={(e) => setDraft(e.target.value)} placeholder={placeholder} rows={3} /><p>Name the action and who or what it affects, like "Emails to dana@acme.com".</p></div>
-      <div className="rule-editor-footer"><Pill onClick={commit} disabled={!draft.trim()}>Add rule</Pill><Pill variant="ghost" onClick={cancel}>Cancel</Pill></div>
-    </>
+    <form className="rule-editor" onSubmit={(e) => { e.preventDefault(); commit(); }} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); cancel(); } }}>
+      <label htmlFor="permission-rule">Applies to</label>
+      <input id="permission-rule" autoFocus value={draft} maxLength={1000} onChange={(e) => setDraft(e.target.value)} placeholder={placeholder} autoComplete="off" />
+      <p>Name the action and who or what it affects, like “Emails to dana@acme.com”</p>
+      <div className="rule-editor-actions"><Pill variant="soft" onClick={cancel}>Cancel</Pill><Pill type="submit" disabled={!draft.trim()}>{saveLabel}</Pill></div>
+    </form>
   );
 }
 
@@ -347,13 +350,12 @@ function Permissions({ s }: { s: Settings }) {
   return (
     <>
       <Group>
-        <Row title="Auto-Review" desc="Use provider approval checks before actions run.">
-          <Switch checked={s.autoReview !== false} onChange={(v) => save({ autoReview: v })} label="Auto-Review" />
+        <Row title="Approvals" desc={s.autoReview !== false ? "Bots check each action against your rules and ask when one needs your OK" : "Bots act without approval checks; your rules still guide them"}>
+          <Select label="Approvals" value={s.autoReview !== false ? "auto" : "full"} onChange={(v) => save({ autoReview: v === "auto" })} options={[["auto", "Auto-review"], ["full", "Full access"]]} />
         </Row>
       </Group>
       <RuleList title="Always Ask" desc="Stop and ask when an action matches these rules" rules={rules.alwaysAsk} onChange={(r) => save({ rules: { ...rules, alwaysAsk: r } })} />
       <RuleList title="Allow without Asking" desc="Continue automatically when an action matches these rules" rules={rules.allowWithoutAsking} onChange={(r) => save({ rules: { ...rules, allowWithoutAsking: r } })} />
-      <p className="permissions-boundary">Rules are instructions for your Bots. Provider approval policies determine which actions require confirmation.</p>
     </>
   );
 }
