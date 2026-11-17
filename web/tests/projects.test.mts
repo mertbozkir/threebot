@@ -35,7 +35,7 @@ const bundle = await buildOnce({
     resolveId: (id) => id.endsWith('virtual:board') ? '\0board' : undefined,
     load: (id) => id === '\0board' ? `export {createElement,act} from 'react'; export {createRoot} from 'react-dom/client'; export * from ${JSON.stringify(src + 'lib/projects.ts')}; export {ProjectsPage, BoardItemChip, parseLinkInput} from ${JSON.stringify(src + 'components/Projects.tsx')}; export {useApp, openProjects} from ${JSON.stringify(src + 'store.ts')}; export {chatDraft} from ${JSON.stringify(src + 'lib/chatDrafts.ts')}; export {navigationFor, navigationUrl, readNavigation, restoreNavigation} from ${JSON.stringify(src + 'lib/navigation.ts')};` : undefined,
   }],
-  ssr: { noExternal: true }, build: { ssr: 'virtual:board', write: false },
+  ssr: { noExternal: true }, build: { rollupOptions: { output: { inlineDynamicImports: true } }, ssr: 'virtual:board', write: false },
 });
 const temp = await mkdtemp(join(tmpdir(), 'bot-board-tests-')); const file = join(temp, 'test.mjs');
 await writeFile(file, entryChunk(bundle).code);

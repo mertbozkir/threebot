@@ -25,7 +25,7 @@ const bundle = await buildOnce({
       export { createRoot } from "react-dom/client";
       export { InstructionsTab } from ${JSON.stringify(`${src}components/Instructions.tsx`)};
       export { useApp } from ${JSON.stringify(`${src}store.ts`)};` : undefined }],
-  ssr: { noExternal: true }, build: { ssr: "virtual:instructions-tab-tests", write: false },
+  ssr: { noExternal: true }, build: { rollupOptions: { output: { inlineDynamicImports: true } }, ssr: "virtual:instructions-tab-tests", write: false },
 });
 const testDir = await mkdtemp(join(tmpdir(), "bot-instructions-tab-"));
 const testEntry = join(testDir, "components.mjs");

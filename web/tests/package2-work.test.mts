@@ -82,7 +82,7 @@ export { useApp } from ${JSON.stringify(src + "store.ts")}; export { t3 } from $
     },
   ],
   ssr: { noExternal: true },
-  build: { ssr: "virtual:package2-tests", write: false },
+  build: { rollupOptions: { output: { inlineDynamicImports: true } }, ssr: "virtual:package2-tests", write: false },
 });
 const dir = await mkdtemp(join(tmpdir(), "package2-tests-")),
   filename = join(dir, "entry.mjs");

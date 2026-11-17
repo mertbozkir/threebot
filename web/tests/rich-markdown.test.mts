@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { after, afterEach, beforeEach, test } from "node:test";
-import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { MessageChannel } from "node:worker_threads";
 import { JSDOM } from "jsdom";
@@ -35,7 +35,7 @@ const bundle = await buildOnce({
   ssr: { noExternal: true, external: ["mermaid", "dompurify"] },
   build: { ssr: "virtual:rich-markdown-tests", write: false },
 });
-for (const output of bundle.output) if (output.type === "chunk") await writeFile(join(directory, output.fileName), output.code);
+for (const output of bundle.output) if (output.type === "chunk") { const file = join(directory, output.fileName); await mkdir(dirname(file), { recursive: true }); await writeFile(file, output.code); }
 const entry = entryChunk(bundle);
 assert.ok(entry);
 const { createElement: h, act, createRoot, RichMarkdown, renderMermaid } = await import(pathToFileURL(join(directory, entry.fileName)).href);
@@ -60,6 +60,7 @@ const waitFor = async (predicate) => {
 
 test("actual parser renders dollar and backslash inline/display math with accessible MathML", async () => {
   await render("Inline $x^2+1$ and \\(\\frac{1}{2}\\).\n\n$$\na^2+b^2=c^2\n$$\n\n\\[E=mc^2\\]");
+  await waitFor(() => document.querySelectorAll(".rich-math").length === 4);
   assert.equal(document.querySelectorAll(".rich-math").length, 4);
   assert.equal(document.querySelectorAll(".rich-math-display").length, 2);
   assert.equal(document.querySelectorAll("math").length, 4);
@@ -84,6 +85,7 @@ test("code, GFM, Bot references and caller navigation survive the math extension
 
 test("untrusted math cannot create links, remote images or HTML and malformed math remains readable", async () => {
   await render("$\\href{javascript:alert(1)}{click}$\n\n$\\includegraphics{https://example.invalid/private}$\n\n$\\htmlClass{injected}{x}$\n\n$\\frac{$");
+  await waitFor(() => document.querySelectorAll(".rich-math").length === 4);
   assert.equal(document.querySelector("a,img,.injected,script"), null);
   assert.ok(document.querySelector(".katex-error"));
   assert.match(document.body.textContent, /\\frac\{/);

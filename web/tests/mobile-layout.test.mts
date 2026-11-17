@@ -76,7 +76,7 @@ const bundle = await buildOnce({
       export { t3 } from ${JSON.stringify(`${src}lib/t3.ts`)};` : undefined,
     transform: (code, id) => isModule(id, `${src}App.tsx`) ? { code: `${code}\nexport { Shell, useNarrow };`, map: null } : undefined,
   }],
-  ssr: { noExternal: true }, build: { ssr: "virtual:mobile-layout", write: false },
+  ssr: { noExternal: true }, build: { rollupOptions: { output: { inlineDynamicImports: true } }, ssr: "virtual:mobile-layout", write: false },
 });
 const entry = entryChunk(bundle);
 assert.ok(entry);

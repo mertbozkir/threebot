@@ -1,21 +1,10 @@
-import { Component, useEffect, useRef, useState, type ReactNode } from "react";
+import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Avatar } from "./components/Avatar";
 import { Chat } from "./components/Chat";
-import { RemoteThread } from "./components/RemoteThread";
-import { ComputerDialog } from "./components/Desktop";
-import { ConnectApps } from "./components/ConnectApps";
-import { Details } from "./components/Details";
-import { DeleteBotDialog, NewBotDialog, RenameBotDialog } from "./components/NewBotDialog";
-import { AdoptProjectDialog } from "./components/AdoptProjectDialog";
-import { SearchDialog } from "./components/SearchDialog";
-import { MobileDialog } from "./components/MobileDialog";
-import { SettingsDialog } from "./components/SettingsDialog";
 import { UsageStatsPrompt } from "./components/UsageStats";
 import { Sidebar } from "./components/Sidebar";
-import { useAutoUpdateNotice } from "./components/RemoteAccess";
-import { ProjectsPage } from "./components/Projects";
 import { RoomDialog } from "./components/Rooms";
-import { RoomView } from "./components/RoomView";
+import { useAutoUpdateNotice } from "./components/RemoteAccess";
 import { ColumnDivider } from "./components/ColumnDivider";
 import { Modal, Pill, Spinner } from "./components/ui";
 import { boot, botStatus, machineOf, openDialog, select, setDetailsOpen, setMainBot, setSidebarCompact, updateBot, useApp, useProjectsOn, type MainBotIntent } from "./store";
@@ -25,6 +14,20 @@ import { navigationFor, navigationUrl, readNavigation, restoreNavigation } from 
 import { runBackGuard } from "./lib/backGuard";
 import "./home-avatar.css";
 import { DEFAULT_PALETTE, isDarkMode } from "./lib/themes";
+
+const RemoteThread = lazy(() => import("./components/RemoteThread").then((m) => ({ default: m.RemoteThread })));
+const ComputerDialog = lazy(() => import("./components/Desktop").then((m) => ({ default: m.ComputerDialog })));
+const ConnectApps = lazy(() => import("./components/ConnectApps").then((m) => ({ default: m.ConnectApps })));
+const Details = lazy(() => import("./components/Details").then((m) => ({ default: m.Details })));
+const DeleteBotDialog = lazy(() => import("./components/NewBotDialog").then((m) => ({ default: m.DeleteBotDialog })));
+const NewBotDialog = lazy(() => import("./components/NewBotDialog").then((m) => ({ default: m.NewBotDialog })));
+const RenameBotDialog = lazy(() => import("./components/NewBotDialog").then((m) => ({ default: m.RenameBotDialog })));
+const AdoptProjectDialog = lazy(() => import("./components/AdoptProjectDialog").then((m) => ({ default: m.AdoptProjectDialog })));
+const SearchDialog = lazy(() => import("./components/SearchDialog").then((m) => ({ default: m.SearchDialog })));
+const MobileDialog = lazy(() => import("./components/MobileDialog").then((m) => ({ default: m.MobileDialog })));
+const SettingsDialog = lazy(() => import("./components/SettingsDialog").then((m) => ({ default: m.SettingsDialog })));
+const ProjectsPage = lazy(() => import("./components/Projects").then((m) => ({ default: m.ProjectsPage })));
+const RoomView = lazy(() => import("./components/RoomView").then((m) => ({ default: m.RoomView })));
 
 function useTheme() {
   const theme = useApp((s) => s.settings?.theme ?? "dark");
@@ -153,17 +156,17 @@ function Shell() {
       {!narrow && !sidebarCompact && <ColumnDivider column="sidebar" />}
       <main className={narrow ? bot || page ? "flex min-w-0 flex-1 overflow-hidden" : "hidden" : "flex min-w-0 flex-1 overflow-hidden rounded-tl-[14px] border-t border-l border-line"}>
         {page === "projects" ? (
-          <ErrorBoundary key="projects"><ProjectsPage narrow={narrow} onBack={narrow ? () => history.back() : undefined} /></ErrorBoundary>
+          <ErrorBoundary key="projects"><Suspense fallback={null}><ProjectsPage narrow={narrow} onBack={narrow ? () => history.back() : undefined} /></Suspense></ErrorBoundary>
         ) : page === "room" && selectedRoom ? (
-          <ErrorBoundary key={`room:${selectedRoom}`}><RoomView roomId={selectedRoom} onBack={narrow ? () => history.back() : undefined} /></ErrorBoundary>
+          <ErrorBoundary key={`room:${selectedRoom}`}><Suspense fallback={null}><RoomView roomId={selectedRoom} onBack={narrow ? () => history.back() : undefined} /></Suspense></ErrorBoundary>
         ) : bot ? (
           <ErrorBoundary key={bot.slug}>
             {remoteLinked
-              ? <RemoteThread bot={bot} threadId={selectedThreadId!} onBack={narrow ? () => history.back() : undefined} />
+              ? <Suspense fallback={null}><RemoteThread bot={bot} threadId={selectedThreadId!} onBack={narrow ? () => history.back() : undefined} /></Suspense>
               : <Chat bot={bot} threadId={selectedThreadId ?? bot.mainThreadId} onBack={narrow ? () => history.back() : undefined} />}
             {detailsOpen && <div className={narrow ? "fixed inset-0 z-40 flex justify-end bg-[var(--overlay)]" : "contents"} onClick={(event) => { if (narrow && event.target === event.currentTarget) setDetailsOpen(false); }}>
               {!narrow && <ColumnDivider key="divider" column="details" />}
-              <Details key="details" bot={bot} threadId={remoteLinked ? bot.mainThreadId : selectedThreadId ?? bot.mainThreadId} />
+              <Suspense fallback={null}><Details key="details" bot={bot} threadId={remoteLinked ? bot.mainThreadId : selectedThreadId ?? bot.mainThreadId} /></Suspense>
             </div>}
           </ErrorBoundary>
         ) : settings ? (
@@ -259,6 +262,7 @@ function Dialogs() {
   const bots = useApp((s) => s.bots);
   return (
     <>
+      <Suspense fallback={null}>
       {typeof dialog === "object" && dialog?.kind === "computer" && <ComputerDialog slug={dialog.slug} />}
       {dialog === "new-bot" && <NewBotDialog />}
       {dialog === "adopt-project" && <AdoptProjectDialog />}
@@ -273,6 +277,7 @@ function Dialogs() {
         ? <MainBotDialog intent={{ kind: "delete", slug: dialog.slug }} />
         : <DeleteBotDialog slug={dialog.slug} />)}
       {typeof dialog === "object" && dialog?.kind === "main-bot" && <MainBotDialog intent={dialog.intent} initialSlug={dialog.initialSlug} />}
+      </Suspense>
       <UsageStatsPrompt />
       {toastMsg && <div className="pop-in fixed bottom-6 left-1/2 z-[70] w-max max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-2xl bg-pill px-4 py-2 text-[13px] text-pill-fg shadow-[var(--shadow-pop)]" role="status">{toastMsg}{toastLink && <> <a href={toastLink.href} target="_blank" rel="noopener noreferrer" onClick={toastLink.open && ((e) => { e.preventDefault(); toastLink.open!(); useApp.setState({ toast: null, toastLink: null }); })} className="font-medium underline underline-offset-2">{toastLink.label}</a></>}</div>}
     </>

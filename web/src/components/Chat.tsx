@@ -1,4 +1,4 @@
-import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentPropsWithoutRef } from "react";
+import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentPropsWithoutRef } from "react";
 import clsx from "clsx";
 import { defaultUrlTransform, type ExtraProps } from "react-markdown";
 import { ArrowDown, ArrowUp, AudioLines, ChevronLeft, Eraser, Globe, MessageCircle, Mic, Monitor, PanelRight, Square, X } from "lucide-react";
@@ -13,7 +13,6 @@ import { fileGlyphKind, fileTypeLabel, messageFileLinks, soloFileLinkParagraph, 
 import { FileCard as DocumentCard } from "./FileCard";
 import { MessageFileStack } from "./MessageFileStack";
 import { RichMarkdown } from "./RichMarkdown";
-import { BoardItemChip } from "./Projects";
 import { parseItemLink } from "../lib/projects";
 import { ChatMessageActions } from "./ChatMessageActions";
 import { ChatAttachmentList, PendingAttachments } from "./ChatAttachments";
@@ -53,6 +52,8 @@ import { UserMessageText } from "./UserMessageText";
 import { activeMentionQuery, mentionEdit, mentionSuggestions, type MentionBot } from "../lib/mentionMenu";
 import { useChatScroll } from "../lib/chatScroll";
 import "../mobile-chat.css";
+
+const BoardItemChip = lazy(() => import("./Projects").then((m) => ({ default: m.BoardItemChip })));
 
 const ConversationWork = memo(function ConversationWork({ threadId, readOnly }: { threadId: string; readOnly: boolean }) {
   const state = useRuntimeWork(threadId);
@@ -420,7 +421,7 @@ function MessageLink({ href, children }: { href?: string; children?: React.React
   }
   if (href?.startsWith("bot:")) return <>{children}</>;
   const boardItem = href && projectsOn ? parseItemLink(href) : null;
-  if (boardItem) return <BoardItemChip id={boardItem}>{children}</BoardItemChip>;
+  if (boardItem) return <Suspense fallback={<>{children}</>}><BoardItemChip id={boardItem}>{children}</BoardItemChip></Suspense>;
   const path = href && workspace ? workspaceLinkPath(href, workspace.workspaceRoot, workspace.fromPath) : null;
   if (path && workspace) return <button className="text-left underline" onClick={() => workspace.openFile(path)}>{children}</button>;
   // Unresolved local paths must never become browser URLs pointing at host files.
