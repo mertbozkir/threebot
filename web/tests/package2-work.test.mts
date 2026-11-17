@@ -681,6 +681,16 @@ test("a partly loaded thread adds only child tasks from the runs it holds rows f
   assert.deepEqual(items.map((item) => item.subagentId ?? item.id), ["row", "recent"]);
 });
 
+test("a child task without a row sits where it started, not at the end of the chat", () => {
+  const row = (id, ordinal, startedAt) => ({ id, type: "assistant_message", runId: "run:thread:t:ordinal:5", ordinal, startedAt });
+  const rows = [row("a", 10, "2026-01-01T10:00:00Z"), row("b", 20, "2026-01-01T11:00:00Z"), row("c", 30, "2026-01-01T12:00:00Z")];
+  const agent = { id: "task", runId: "run:thread:t:ordinal:5", status: "completed", startedAt: "2026-01-01T11:30:00Z", updatedAt: "2026-01-01T11:40:00Z" };
+  const placed = supplementSubagents(rows, [agent], "t").find((item) => item.subagentId === "task");
+  assert.ok(placed.ordinal > 20 && placed.ordinal < 30, "between the rows around its start");
+  const early = { ...agent, id: "early", startedAt: "2026-01-01T09:00:00Z" };
+  assert.equal(supplementSubagents(rows, [early], "t", 5).some((item) => item.subagentId === "early"), false, "a partly loaded thread leaves out tasks from before its oldest row");
+});
+
 test("ambiguous Queue payload keeps both IDs and dispatch mode across reconstruction", () => {
   const first = messageCommand(
     "reload-test",

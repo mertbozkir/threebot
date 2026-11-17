@@ -39,17 +39,33 @@ export function loadedRunFloor(items: readonly TurnItem[], runs: Record<string, 
 
 const taskItems = new WeakMap<object, TurnItem>();
 /** Some native/delegated tasks have a projection record without a visible turn item. */
+/**
+ * Records without a row are placed where they started, after the last row that started before them, not at the end.
+ * runFloor: in a partly loaded thread, records from older runs, or that started before the oldest loaded row, are left out.
+ */
 export function supplementSubagents(items: TurnItem[], agents: unknown[], threadId: string, runFloor: number | null = null): TurnItem[] {
   const represented = new Set(items.filter(item => item.type === "subagent").map(item => item.subagentId));
+  const timeline = items.flatMap(item => {
+    const at = Date.parse(item.startedAt ?? "");
+    return Number.isFinite(at) ? [[at, item.ordinal] as const] : [];
+  }).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const last = Math.max(0, ...items.map(item => item.ordinal));
   const additions: TurnItem[] = [];
-  const ordinal = Math.max(0, ...items.map(item => item.ordinal));
   for (const value of agents) {
     const agent = record(value);
     if (!agent || typeof agent.id !== "string" || typeof agent.status !== "string" || represented.has(agent.id) || !value || typeof value !== "object") continue;
     if (runFloor !== null && (runOrdinal(agent.runId) ?? Infinity) < runFloor) continue;
+    const at = Date.parse(typeof agent.startedAt === "string" ? agent.startedAt : "");
+    let ordinal = last + additions.length + 1;
+    if (Number.isFinite(at) && timeline.length) {
+      let before: number | null = null;
+      for (const [time, rowOrdinal] of timeline) if (time <= at) before = rowOrdinal; else break;
+      if (before === null && runFloor !== null) continue;
+      ordinal = (before ?? timeline[0][1] - 1) + 0.5 + additions.length / 1000;
+    }
     let item = taskItems.get(value);
-    if (!item) {
-      item = { ...agent, id: `subagent-record:${agent.id}`, subagentId: agent.id, threadId, runId: typeof agent.runId === "string" ? agent.runId : null, ordinal: ordinal + additions.length + 1, status: agent.status, title: typeof agent.title === "string" ? agent.title : null, type: "subagent", startedAt: typeof agent.startedAt === "string" ? agent.startedAt : null, completedAt: typeof agent.completedAt === "string" ? agent.completedAt : null, updatedAt: typeof agent.updatedAt === "string" ? agent.updatedAt : "", parentItemId: null };
+    if (!item || item.ordinal !== ordinal) {
+      item = { ...agent, id: `subagent-record:${agent.id}`, subagentId: agent.id, threadId, runId: typeof agent.runId === "string" ? agent.runId : null, ordinal, status: agent.status, title: typeof agent.title === "string" ? agent.title : null, type: "subagent", startedAt: typeof agent.startedAt === "string" ? agent.startedAt : null, completedAt: typeof agent.completedAt === "string" ? agent.completedAt : null, updatedAt: typeof agent.updatedAt === "string" ? agent.updatedAt : "", parentItemId: null };
       taskItems.set(value, item);
     }
     additions.push(item);
