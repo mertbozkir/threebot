@@ -507,7 +507,7 @@ class RuntimeWork {
     const generation = ++this.generation;
     this.stream = t3.stream(
       "orchestration.subscribeThread",
-      { threadId: this.threadId, requestCompletionMarker: true },
+      { threadId: this.threadId, requestCompletionMarker: true, acceptBoundedSnapshot: true },
       (value: unknown) => {
         if (generation !== this.generation) return;
         const r = record(value);

@@ -19,6 +19,9 @@ export type ThreadData = {
   requests: Record<string, RuntimeRequest>;
   subagents: Record<string, Subagent>;
   loaded: boolean;
+  /** Bounded snapshots hold only recent rows; older ones load page by page from this cursor. */
+  historyCursor?: string | null;
+  hasMoreHistory?: boolean;
 };
 
 export type MainBotIntent = { kind: "replace" } | { kind: "hide"; slug: string } | { kind: "delete"; slug: string };
@@ -448,10 +451,15 @@ function scopedShell(thread: ThreadShell, environmentId?: string): ThreadShell {
   const key = (id: string) => threadKey({ threadId: id, environmentId });
   return { ...thread, id: key(thread.id), environmentId, lineage: { ...thread.lineage, parentThreadId: thread.lineage.parentThreadId ? key(thread.lineage.parentThreadId) : null, rootThreadId: key(thread.lineage.rootThreadId) } };
 }
+/** The last stream sequence seen per thread, so reopening resumes from it instead of taking a new snapshot. */
+const threadSequences = new Map<string, number>();
+
 function openThreadStream(threadId: string): StreamHandle {
   const target = threadTarget(threadId);
   if (target.environmentId) familyThreadIds.add(threadId);
-  return threadClient(threadId).stream("orchestration.subscribeThread", { threadId: target.threadId, ...(!target.environmentId && get().runtimeFeatures.threadResumeCompletionMarker ? { requestCompletionMarker: true } : {}) }, (it) => {
+  // acceptBoundedSnapshot: a long thread opens with its recent rows only (older T3 ignores it and sends everything).
+  const afterSequence = threadSequences.get(threadId);
+  return threadClient(threadId).stream("orchestration.subscribeThread", { threadId: target.threadId, acceptBoundedSnapshot: true, ...(afterSequence !== undefined ? { afterSequence } : {}), ...(!target.environmentId && get().runtimeFeatures.threadResumeCompletionMarker ? { requestCompletionMarker: true } : {}) }, (it) => {
     if (it.kind === "snapshot") {
       const p = it.projection;
       if (p.thread) p.thread = scopedShell(p.thread, target.environmentId);
@@ -465,11 +473,15 @@ function openThreadStream(threadId: string): StreamHandle {
         requests: Object.fromEntries((p.runtimeRequests ?? []).map((r: RuntimeRequest) => [r.id, r])),
         subagents: Object.fromEntries((p.subagents ?? []).map((agent: Subagent) => [agent.id, agent])),
         loaded: true,
+        historyCursor: it.hasMoreHistory ? it.historyCursor ?? null : null,
+        hasMoreHistory: it.hasMoreHistory === true && typeof it.historyCursor === "string",
       }));
+      if (typeof it.snapshotSequence === "number") threadSequences.set(threadId, it.snapshotSequence);
       if (p.subagents?.length) void loadThreadFamily(threadId);
     } else if (it.kind === "synchronized") {
       patchThread(threadId, (d) => ({ ...d, loaded: true }));
     } else if (it.kind === "event") {
+      if (typeof it.sequence === "number" && it.sequence > (threadSequences.get(threadId) ?? -1)) threadSequences.set(threadId, it.sequence);
       const ev = it.event;
       if (ev.type === "turn-item.updated") patchThread(threadId, (d) => ({ ...d, items: { ...d.items, [ev.payload.id]: ev.payload } }));
       else if (ev.type === "run.created" || ev.type === "run.updated") patchThread(threadId, (d) => ({ ...d, runs: { ...d.runs, [ev.payload.id]: ev.payload } }));
@@ -482,6 +494,26 @@ function openThreadStream(threadId: string): StreamHandle {
       }
     }
   });
+}
+
+const olderLoads = new Set<string>();
+/** Prepends the next page of older rows of a bounded thread. Resolves true when rows were added. */
+export async function loadOlderMessages(threadId: string): Promise<boolean> {
+  const data = get().threadData[threadId];
+  if (!data?.hasMoreHistory || !data.historyCursor || olderLoads.has(threadId)) return false;
+  olderLoads.add(threadId);
+  try {
+    const target = threadTarget(threadId);
+    const page = await environmentHttp<{ items?: { item: TurnItem }[]; nextCursor?: string | null; hasMoreHistory?: boolean }>(target.environmentId, `/api/orchestration/threads/${encodeURIComponent(target.threadId)}/history?cursor=${encodeURIComponent(data.historyCursor)}`);
+    const older = Object.fromEntries((page.items ?? []).map(({ item }) => [item.id, item]));
+    patchThread(threadId, (d) => ({ ...d, items: { ...older, ...d.items }, historyCursor: page.nextCursor ?? null, hasMoreHistory: page.hasMoreHistory === true && typeof page.nextCursor === "string" }));
+    return Object.keys(older).length > 0;
+  } catch (error) {
+    toast(error instanceof Error ? error.message : "Couldn't load earlier messages");
+    return false;
+  } finally {
+    olderLoads.delete(threadId);
+  }
 }
 
 export function watchThread(threadId: string) {
