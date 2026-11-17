@@ -113,7 +113,7 @@ let root, host;
 const bot = { slug: "example", name: "Example", mainThreadId: "main", color: "teal", shape: "sphere", projectId: null, workspaceRoot: "/example" };
 beforeEach(() => {
   viewport(390, 844, "coarse"); localStorage.clear(); history.replaceState(null, "", "/");
-  t3.stream = () => ({ cancel() {}, done: Promise.resolve() });
+  t3.stream = () => ({ cancel() {}, done: Promise.resolve(), live: () => false });
   t3.call = async (method) => {
     if (method === "preview.list") return { sessions: [] };
     if (method === "projects.listEntries") return { entries: [], truncated: false };

@@ -3,7 +3,7 @@ import { api } from "./lib/api";
 import { isCustomColor } from "../../server/avatar-color.mts";
 import { rememberColor } from "./lib/recentColors";
 import { enablePushNotifications } from "./lib/push";
-import { t3, t3http, uuid, environmentT3, environmentHttp, environmentPrefix, threadClient, threadTarget, threadKey, type ThreadTarget, type StreamHandle } from "./lib/t3";
+import { allT3Clients, t3, t3http, uuid, environmentT3, environmentHttp, environmentPrefix, threadClient, threadTarget, threadKey, type ThreadTarget, type StreamHandle } from "./lib/t3";
 import { vaultApi, type VaultItem } from "./lib/vault";
 import { columnWidth, type Column } from "./lib/layout";
 import { createRoom as createRoomApi, deleteRoom as deleteRoomApi, fetchRoom, fetchRooms, resetRoom as resetRoomApi, sendRoomMessage as sendRoomMessageApi, stopRoom as stopRoomApi, updateRoom as updateRoomApi, type CreateRoomInput, type RoomSummary, type RoomView, type RoomTurn, type UpdateRoomInput } from "./lib/rooms";
@@ -219,6 +219,11 @@ async function initialize() {
         void loadArchivedThreads();
         resubscribeThreads();
       });
+      // A phone suspends the page: on return the socket may be dead or waiting out a retry.
+      const wake = () => { if (document.visibilityState === "visible") for (const client of allT3Clients()) client.checkAlive(); };
+      document.addEventListener("visibilitychange", wake);
+      window.addEventListener("online", wake);
+      window.addEventListener("pageshow", wake);
       window.setInterval(refreshBots, 5_000);
       window.setInterval(() => { if (document.visibilityState === "visible") void loadMachines(); }, 60_000);
       runtimeStarted = true;
@@ -487,7 +492,7 @@ export function watchThread(threadId: string) {
     if (environmentId && !environmentReconnects.has(environmentId)) {
       environmentReconnects.add(environmentId);
       threadClient(threadId).onReconnect(() => {
-        for (const [key, sub] of threadSubs) if (threadTarget(key).environmentId === environmentId) {
+        for (const [key, sub] of threadSubs) if (threadTarget(key).environmentId === environmentId && !sub.handle.live()) {
           sub.handle.cancel(); sub.handle = subscribedThread(key);
         }
       });
@@ -512,8 +517,13 @@ function subscribedThread(threadId: string) {
   });
   return handle;
 }
+/** After a (re)connect: reopen each watched thread whose stream didn't reach this socket. Streams sent on it already are live. */
 function resubscribeThreads() {
-  for (const [threadId, sub] of threadSubs) if (!threadTarget(threadId).environmentId) sub.handle = subscribedThread(threadId);
+  for (const [threadId, sub] of threadSubs) {
+    if (threadTarget(threadId).environmentId || sub.handle.live()) continue;
+    sub.handle.cancel();
+    sub.handle = subscribedThread(threadId);
+  }
 }
 
 // ---------- selectors ----------

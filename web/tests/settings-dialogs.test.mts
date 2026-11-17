@@ -650,7 +650,7 @@ test("Payments reports its unsupported boundary and never offers card entry", as
 test("a late workspace skill refresh cannot replace the next Bot's skills", async () => {
   const originalCall = t3.call, originalStream = t3.stream;
   let finishRefresh;
-  t3.stream = () => ({ cancel() {}, done: Promise.resolve() });
+  t3.stream = () => ({ cancel() {}, done: Promise.resolve(), live: () => false });
   const provider = (name) => ({ providers: [{ instanceId: "codex", displayName: "Codex", skills: [{ name, enabled: true }] }] });
   t3.call = async (tag) => tag === "server.refreshProviders" ? new Promise((resolve) => { finishRefresh = resolve; }) : provider(useApp.getState().selected === "a" ? "skill-a" : "skill-b");
   try {

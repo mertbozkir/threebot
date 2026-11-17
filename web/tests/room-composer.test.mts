@@ -90,7 +90,7 @@ beforeEach(async () => {
   URL.createObjectURL = () => `blob:room-${serial}-${uploads.length}`;
   URL.revokeObjectURL = () => {};
   runtime = await loaded;
-  runtime.t3.stream = () => ({ cancel() {}, done: Promise.resolve() });
+  runtime.t3.stream = () => ({ cancel() {}, done: Promise.resolve(), live: () => false });
   runtime.t3.call = async (method, payload) => {
     assert.equal(method, "attachments.createUploadUrl");
     return { attachmentId: `uploaded-${payload.name}`, relativeUrl: `/upload/${payload.name}` };

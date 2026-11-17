@@ -35,7 +35,7 @@ beforeEach(() => {
   sockets = []; reconnects = [];
   globalThis.WebSocket = Socket as unknown as typeof WebSocket;
   globalThis.location = { protocol: "https:", host: "fixture.invalid" } as Location;
-  globalThis.window = { setTimeout: (callback) => reconnects.push(callback), setInterval: () => 1, clearInterval() {} } as unknown as typeof window;
+  globalThis.window = { setTimeout: (callback) => reconnects.push(callback), clearTimeout() {}, setInterval: () => 1, clearInterval() {} } as unknown as typeof window;
 });
 after(async () => { await rm(directory, { recursive: true }); });
 
@@ -128,4 +128,41 @@ test("denied remote credential fails pending reads with an actionable error befo
   const deniedStream = client.stream("orchestration.subscribeThread", { threadId: "same-id" }, () => {});
   await assert.rejects(deniedStream.done, /scoped gateway access/);
   await assert.rejects(environmentHttp("denied", "/api/assets/id"), /scoped gateway access/);
+});
+
+test("a stream cancelled before the socket opens is never sent", () => {
+  const client = new T3Client(); client.connect();
+  const dropped = client.stream("orchestration.subscribeThread", { threadId: "a" }, () => {});
+  const kept = client.stream("orchestration.subscribeThread", { threadId: "b" }, () => {});
+  dropped.cancel();
+  sockets[0].open();
+  assert.deepEqual(sockets[0].sent.map((m) => [m._tag, m.payload?.threadId]), [["Request", "b"]]);
+  assert.equal(kept.live(), true, "a queued stream flushed on open is live on that socket");
+  assert.equal(dropped.live(), false);
+});
+
+test("a stream is live only on the socket that carried it", () => {
+  const client = new T3Client(); client.connect(); sockets[0].open();
+  const handle = client.stream("orchestration.subscribeThread", { threadId: "a" }, () => {});
+  assert.equal(handle.live(), true);
+  sockets[0].close();
+  assert.equal(handle.live(), false, "a lost connection ends the stream");
+  reconnects.shift()(); sockets[1].open();
+  assert.equal(handle.live(), false, "the old stream must be reopened on the new socket");
+});
+
+test("checkAlive closes a socket that doesn't answer a ping, and reconnects a closed one at once", () => {
+  const client = new T3Client(); client.connect(); sockets[0].open();
+  client.checkAlive(3000);
+  assert.deepEqual(sockets[0].sent.at(-1), { _tag: "Ping" });
+  const pongTimeout = reconnects.pop();
+  sockets[0].onmessage({ data: JSON.stringify({ _tag: "Pong" }) });
+  pongTimeout();
+  assert.equal(sockets[0].readyState, 1, "a pong keeps the socket");
+  client.checkAlive(3000);
+  reconnects.pop()();
+  assert.equal(sockets[0].readyState, 3, "no pong closes the socket");
+  assert.equal(sockets.length, 1);
+  client.checkAlive();
+  assert.equal(sockets.length, 2, "a closed client reconnects without waiting for its retry timer");
 });

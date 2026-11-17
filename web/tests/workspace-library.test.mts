@@ -119,7 +119,7 @@ beforeEach(() => {
   rpc = async (tag) => tag === 'assets.createUrl' ? { relativeUrl: '/assets/signed?token=fixture' } : { entries: [], truncated: false };
   fetchResponse = () => new Response('<html><body>Report</body></html>', { status: 200 });
   mock.method(t3, 'call', async (tag, payload) => { calls.push({ tag, payload }); return rpc(tag, payload); });
-  mock.method(t3, 'stream', () => ({ cancel() {}, done: Promise.resolve() }));
+  mock.method(t3, 'stream', () => ({ cancel() {}, done: Promise.resolve(), live: () => false }));
   mock.method(globalThis, 'fetch', async (url) => { fetches.push(url); return fetchResponse(); });
   localStorage.clear();
   useApp.setState({ bots: { example: bot }, historicalBots: {}, threads: {}, tasks: [], selected: 'example', selectedThreadId: null, exchangeBotSlug: null, detailsOpen: false, settings: null, threadData: { main: { loaded: true, items: {}, runs: {}, requests: {} } } });
