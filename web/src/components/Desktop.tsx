@@ -60,7 +60,7 @@ function useDesktopStatus(slug: string) {
   return { status, error, refresh: () => refresh.current() };
 }
 
-/** Where the Bot is acting: a dot at its last pointer position, a pulse on clicks, a pill while it works. */
+/** Where the Bot is acting: a glowing arrow at its last pointer position, a pulse on clicks, a pill while it works. */
 function BotPointer({ activity, container }: { activity: DesktopStatus["activity"]; container: { current: HTMLDivElement | null } }) {
   const [canvas, setCanvas] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [click, setClick] = useState<string | null>(null);
@@ -96,7 +96,10 @@ function BotPointer({ activity, container }: { activity: DesktopStatus["activity
   if (!activity.busy && !spot) return null;
   return <div className="pointer-events-none absolute inset-0">
     {activity.busy && <span className="absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-[12px] text-white/90">Using the computer</span>}
-    {spot && <span className="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_0_0_2px_rgba(0,0,0,0.6)]" style={{ left: spot.left, top: spot.top }} />}
+    {spot && <span className="desktop-pointer absolute" style={{ left: spot.left, top: spot.top }}>
+      <span className="desktop-pointer-glow" />
+      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.04 4.69a.5.5 0 0 1 .65-.65l16 6.5a.5.5 0 0 1-.06.95l-6.13 1.58a2 2 0 0 0-1.43 1.43l-1.58 6.13a.5.5 0 0 1-.95.06z" fill="rgba(110,110,118,0.85)" stroke="white" strokeWidth="1.75" strokeLinejoin="round" /></svg>
+    </span>}
     {spot && click && click === last?.at && <span className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: spot.left, top: spot.top }}><span className="desktop-pointer-click block size-6 rounded-full border-2 border-white/90" /></span>}
   </div>;
 }
