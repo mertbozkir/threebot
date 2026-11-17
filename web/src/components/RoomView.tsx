@@ -64,7 +64,7 @@ export function RoomView({ roomId, onBack }: { roomId: string; onBack?: () => vo
   // The same subscription Chat uses: watchThread feeds threadData for every member thread.
   const threadKey = historyMembers.flatMap((member) => (member.threadId ? [member.threadId] : [])).join("|");
   useEffect(() => {
-    const unsubs = (threadKey ? threadKey.split("|") : []).map((threadId) => watchThread(threadId));
+    const unsubs = (threadKey ? threadKey.split("|") : []).map((threadId) => watchThread(threadId, false));
     return () => { for (const unsubscribe of unsubs) unsubscribe(); };
   }, [threadKey]);
 

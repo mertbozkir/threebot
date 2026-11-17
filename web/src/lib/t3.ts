@@ -81,8 +81,9 @@ export class T3Client {
       }
       this.setState("closed");
       window.clearTimeout(this.pongWait);
+      this.pongWait = undefined;
       this.reconnectTimer = window.setTimeout(() => this.connect(), this.reconnectDelay);
-      this.reconnectDelay = Math.min(this.reconnectDelay * 2, 10_000);
+      this.reconnectDelay = Math.min(Math.max(this.reconnectDelay * 2, 500), 10_000);
     };
   }
 
@@ -92,6 +93,8 @@ export class T3Client {
    */
   checkAlive(timeoutMs = 3000) {
     if (this.environmentId && this.state === "closed" && !this.checking) return this.connect();
+    // Still closing: its onclose clears the old requests and reconnects; replacing it now would let that wipe the new socket's.
+    if (this.ws?.readyState === WebSocket.CLOSING) { this.reconnectDelay = 0; return; }
     if (!this.ws || this.ws.readyState > WebSocket.OPEN) {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectDelay = 500;

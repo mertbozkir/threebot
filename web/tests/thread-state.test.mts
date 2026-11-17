@@ -116,3 +116,23 @@ test('a long thread opens bounded, resumes from its last sequence, and loads old
   globalThis.fetch = async () => Response.json([]);
   stop();
 });
+
+test('rooms read whole histories, and a history page from an older snapshot is dropped', async () => {
+  useApp.setState({ threads: { root } });
+  const stop = watchThread('room-member', false);
+  assert.equal(payloads.get('orchestration.subscribeThread').acceptBoundedSnapshot, undefined);
+  stop();
+  const stopRoot = watchThread('root');
+  const receive = streams.get('orchestration.subscribeThread');
+  receive({ kind: 'snapshot', snapshotSequence: 20, historyCursor: 'c2', hasMoreHistory: true, projection: { thread: root, visibleTurnItems: [{ item: { id: 'x', type: 'assistant_message', text: 'x' } }], turnItems: [{ id: 'stop', type: 'run_interrupt_request' }], runs: [], subagents: [] } });
+  assert.ok(useApp.getState().threadData.root.items.stop, 'interrupt requests kept only in turnItems survive');
+  let answer;
+  globalThis.fetch = () => new Promise((resolve) => { answer = resolve; });
+  const pending = loadOlderMessages('root');
+  receive({ kind: 'snapshot', snapshotSequence: 30, historyCursor: 'c3', hasMoreHistory: true, projection: { thread: root, visibleTurnItems: [], runs: [], subagents: [] } });
+  answer(Response.json({ items: [{ item: { id: 'stale', type: 'assistant_message', text: 's' } }], nextCursor: null, hasMoreHistory: false }));
+  assert.equal(await pending, false);
+  assert.equal(useApp.getState().threadData.root.historyCursor, 'c3', 'the newer snapshot keeps its cursor');
+  globalThis.fetch = async () => Response.json([]);
+  stopRoot();
+});

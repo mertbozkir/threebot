@@ -165,4 +165,19 @@ test("checkAlive closes a socket that doesn't answer a ping, and reconnects a cl
   assert.equal(sockets.length, 1);
   client.checkAlive();
   assert.equal(sockets.length, 2, "a closed client reconnects without waiting for its retry timer");
+  sockets[1].open();
+  client.checkAlive(3000);
+  assert.deepEqual(sockets[1].sent.at(-1), { _tag: "Ping" }, "a ping lost with its socket doesn't block later checks");
+});
+
+test("checkAlive never replaces a socket that is still closing", () => {
+  const client = new T3Client(); client.connect(); sockets[0].open();
+  sockets[0].readyState = 2;
+  Socket.CLOSING = 2;
+  client.checkAlive();
+  assert.equal(sockets.length, 1, "the closing socket's own onclose reconnects");
+  sockets[0].close();
+  reconnects.at(-1)();
+  assert.equal(sockets.length, 2);
+  delete Socket.CLOSING;
 });
