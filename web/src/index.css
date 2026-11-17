@@ -65,7 +65,7 @@
   --pill: #f2f0fb;
   --pill-fg: #121020;
   --pill-soft: #f2f0fb1f;
-  --switch-on: #2f7fe8;
+  --switch-on: #126dd3;
   --overlay: #000000b2;
   --shadow-pop: 0 0 0 0.5px #f2f0fb21;
   --merged: #a371f7;
@@ -550,12 +550,15 @@ button {
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background-color: var(--bg-card);
+  background-color: transparent;
   color: var(--fg);
   font-size: 14px;
   outline: none;
 }
-.settings-select { appearance: none; max-width: 100%; padding: 0 30px 0 12px; text-overflow: ellipsis; }
+/* Sized to the chosen value, not the longest option. */
+.settings-select { appearance: none; field-sizing: content; max-width: 100%; padding: 0 30px 0 12px; text-overflow: ellipsis; }
+/* A card is a shade off the page in either theme. */
+.settings-card { background-color: color-mix(in srgb, var(--fg) 5%, transparent); border: 1px solid color-mix(in srgb, var(--fg) 8%, transparent); }
 .settings-input { padding: 0 12px; }
 .settings-select:focus-visible,
 .settings-input:focus-visible {
