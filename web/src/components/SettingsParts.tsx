@@ -6,7 +6,7 @@ export function Group({ title, children }: { title?: string; children: React.Rea
   return (
     <div className="settings-group mb-6">
       {title && <div className="mb-2 pl-3.5 text-[13px] text-muted">{title}</div>}
-      <div className="overflow-hidden rounded-[18px] border border-line bg-card">{children}</div>
+      <div className="settings-card overflow-hidden rounded-[18px]">{children}</div>
     </div>
   );
 }
