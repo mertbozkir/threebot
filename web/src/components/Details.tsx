@@ -17,6 +17,7 @@ import { botStatus, botThreadStatus, openDialog, selectThread, setDetailsOpen, t
 import { sharedObjects } from "../lib/objectAvatars";
 import { useAvatarDrawing } from "./useAvatarDrawing";
 import { ComputerScreen, useBotTabs } from "./Computer";
+import { DesktopThumbnail } from "./Desktop";
 import type { Bot, ModelSelection, ScheduledTask } from "../lib/types";
 
 import { chatDraft } from "../lib/chatDrafts";
@@ -392,6 +393,11 @@ function WebhookDetails({ task }: { task: ScheduledTask }) {
 }
 
 function ComputerTab({ bot }: { bot: Bot }) {
+  const desktopOn = useApp(s => s.settings?.beta?.desktop === true);
+  return desktopOn ? <DesktopThumbnail bot={bot} /> : <BrowserTab bot={bot} />;
+}
+
+function BrowserTab({ bot }: { bot: Bot }) {
   const tabs = useBotTabs(bot.mainThreadId);
   const tab = tabs?.[tabs.length - 1];
   const open = () => openDialog({ kind: "computer", slug: bot.slug });

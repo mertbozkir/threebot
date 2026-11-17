@@ -18,8 +18,8 @@ async function dir() {
 
 test("a new install starts with the Projects board off", async () => {
   const { file, done } = await dir();
-  assert.deepEqual(await settleBetaDefaults(undefined, { projectsFile: file }), { beta: { projects: false, settleBotThreads: false } });
-  assert.deepEqual(await settleBetaDefaults({ userName: "Sam" }, { projectsFile: file }), { userName: "Sam", beta: { projects: false, settleBotThreads: false } });
+  assert.deepEqual(await settleBetaDefaults(undefined, { projectsFile: file }), { beta: { projects: false, settleBotThreads: false, desktop: false } });
+  assert.deepEqual(await settleBetaDefaults({ userName: "Sam" }, { projectsFile: file }), { userName: "Sam", beta: { projects: false, settleBotThreads: false, desktop: false } });
   await writeFile(file, JSON.stringify({ version: 3, items: {} }));
   assert.equal((await settleBetaDefaults({}, { projectsFile: file }))!.beta.projects, false, "an empty board doesn't count");
   await done();
@@ -31,7 +31,7 @@ test("an existing install with a non-empty board keeps it on", async () => {
   await store.save([{ kind: "task", title: "Renew the domain" }], { type: "user" });
   assert.equal(await boardHasItems(file), true);
   const settled = await settleBetaDefaults({ userName: "Sam", theme: "dark" }, { projectsFile: file });
-  assert.deepEqual(settled, { userName: "Sam", theme: "dark", beta: { projects: true, settleBotThreads: false } });
+  assert.deepEqual(settled, { userName: "Sam", theme: "dark", beta: { projects: true, settleBotThreads: false, desktop: false } });
   // A damaged board is not hidden.
   await writeFile(file, "{ not json");
   assert.equal(await boardHasItems(file), true);
@@ -49,12 +49,12 @@ test("once the switch has been set, the default never overrides it and the board
 
 test("the toggle round-trips and refuses anything but known booleans", () => {
   let saved = betaSettings(undefined);
-  assert.deepEqual(saved, { projects: false, settleBotThreads: false });
+  assert.deepEqual(saved, { projects: false, settleBotThreads: false, desktop: false });
   saved = patchBeta(saved, { projects: true });
-  assert.deepEqual(betaSettings(saved), { projects: true, settleBotThreads: false });
+  assert.deepEqual(betaSettings(saved), { projects: true, settleBotThreads: false, desktop: false });
   saved = patchBeta(saved, { projects: false });
-  assert.deepEqual(betaSettings(saved), { projects: false, settleBotThreads: false });
-  assert.deepEqual(betaSettings({ projects: "yes", other: true }), { projects: false, settleBotThreads: false });
+  assert.deepEqual(betaSettings(saved), { projects: false, settleBotThreads: false, desktop: false });
+  assert.deepEqual(betaSettings({ projects: "yes", other: true }), { projects: false, settleBotThreads: false, desktop: false });
   assert.throws(() => patchBeta(saved, { projects: "on" }), (e: { status?: number }) => e.status === 400);
   assert.throws(() => patchBeta(saved, { nope: true }), (e: { status?: number }) => e.status === 400);
   assert.throws(() => patchBeta(saved, null), (e: { status?: number }) => e.status === 400);
@@ -144,4 +144,11 @@ test("the Bot instructions carry the Projects board section only while the beta 
   assert.match(on, /## Projects board\n- Sam's Projects page is a live board/);
   assert.match(on, /Keep it true without being asked/);
   assert.match(on, /\n\n## Projects board[\s\S]*Don't put secrets on the board; they belong in the Vault\.\n\n## Other Bots/);
+});
+
+test("AGENTS.md describes the Bot's own screen only while the Computer beta is on", () => {
+  const render = (beta?: { projects: boolean; desktop?: boolean }) => renderAgentsMd({ bot: { name: "Ops", slug: "ops", projectId: "p", mainThreadId: "t" }, settings: { userName: "Sam", beta }, botsRoot: "/bots" });
+  assert.equal(render({ projects: false, desktop: false }), render({ projects: false }), "off and missing render the same");
+  assert.doesNotMatch(render({ projects: false }), /computer_screenshot/);
+  assert.match(render({ projects: false, desktop: true }), /computer_screenshot/);
 });
