@@ -111,24 +111,24 @@ test("failed save shows status and retains the permission rule draft", async () 
   handleRequest = (url, init) => init.method === "PUT"
     ? new Promise((resolve) => { rejectRequest = () => resolve(Response.json({ error: "Storage unavailable" }, { status: 503 })); })
     : Response.json(settings);
-  await render(); await click(button("Add Rule")); await input(document.querySelector("textarea"), "Ask before deleting"); await click(button("Add rule"));
+  await render(); await click(button("Add Rule")); await input(document.querySelector("#permission-rule"), "Ask before deleting"); await click(button("Add rule"));
   assert.match(document.querySelector('[role="status"]').textContent, /Saving/); assert.equal(document.querySelector("fieldset").disabled, true);
   await act(async () => rejectRequest()); assert.match(document.querySelector('[role="alert"]').textContent, /Storage unavailable/);
-  assert.equal(document.querySelector("textarea").value, "Ask before deleting"); assert.equal(document.querySelector("fieldset").disabled, false);
+  assert.equal(document.querySelector("#permission-rule").value, "Ask before deleting"); assert.equal(document.querySelector("fieldset").disabled, false);
 });
 
-test("permission add/edit/delete and Auto-Review save their values", async () => {
-  useApp.setState({ settingsPane: "permissions" }); await render(); await click(labeled("Auto-Review")); assert.equal(settings.autoReview, false);
-  await click(button("Add Rule")); await input(document.querySelector("textarea"), "Ask before deleting"); await click(button("Add rule"));
+test("permission add/edit/delete and Approvals save their values, editing inline", async () => {
+  useApp.setState({ settingsPane: "permissions" }); await render(); await select("Approvals", "full"); assert.equal(settings.autoReview, false);
+  await click(button("Add Rule")); await input(document.querySelector("#permission-rule"), "Ask before deleting"); assert.equal(document.querySelectorAll("[data-bot-modal]").length, 1); await click(button("Add rule"));
   assert.deepEqual(settings.rules.alwaysAsk, ["Ask before buying", "Ask before deleting"]);
-  await click(labeled("Edit rule")); await input(document.querySelector("textarea"), "Ask before spending"); await click(button("Add rule"));
+  await click(labeled("Edit rule")); await input(document.querySelector("#permission-rule"), "Ask before spending"); await click(button("Save"));
   assert.deepEqual(settings.rules.alwaysAsk, ["Ask before spending", "Ask before deleting"]);
   await click(labeled("Delete rule")); assert.deepEqual(settings.rules.alwaysAsk, ["Ask before deleting"]);
 });
 
 test("Escape cancels the rule editor without closing Settings", async () => {
-  useApp.setState({ settingsPane: "permissions", dialog: "settings" }); await render(); await click(button("Add Rule")); await key(document.querySelector("textarea"), "Escape");
-  assert.equal(document.querySelector("textarea"), null); assert.equal(useApp.getState().dialog, "settings"); assert.equal(requests.length, 0);
+  useApp.setState({ settingsPane: "permissions", dialog: "settings" }); await render(); await click(button("Add Rule")); await key(document.querySelector("#permission-rule"), "Escape");
+  assert.equal(document.querySelector("#permission-rule"), null); assert.equal(useApp.getState().dialog, "settings"); assert.equal(requests.length, 0);
 });
 
 test("Computer/Updates report metadata and retry a genuine failure", async () => {
@@ -680,14 +680,14 @@ test("Account and manual Time Zone open separate destinations, while automatic z
   await select("Time Zone", "Europe/Paris"); assert.equal(settings.timezone, "Europe/Paris");
 });
 
-test("Always Ask and Allow without Asking use their distinct native editor examples and Back cancels", async () => {
+test("Always Ask and Allow without Asking use their distinct editor examples and Cancel closes them", async () => {
   useApp.setState({ settingsPane: "permissions" }); await render();
   const add = () => [...document.querySelectorAll("button")].filter((button) => button.textContent.trim() === "Add Rule");
-  await click(add()[0]); assert.equal(document.querySelector("textarea").placeholder, "Purchases over $50");
-  await click(labeled("Back", [...document.querySelectorAll('[role="dialog"]')].at(-1)));
-  await click(add()[1]); assert.equal(document.querySelector("textarea").placeholder, "Emails to my team at acme.com"); assert.equal(button("Add rule").disabled, true);
-  await click(labeled("Back", [...document.querySelectorAll('[role="dialog"]')].at(-1)));
-  assert.equal(document.querySelectorAll('[role="dialog"]').length, 1); assert.equal(requests.length, 0);
+  await click(add()[0]); assert.equal(document.querySelector("#permission-rule").placeholder, "Purchases over $50");
+  await click(button("Cancel")); assert.equal(document.querySelector("#permission-rule"), null);
+  await click(add()[1]); assert.equal(document.querySelector("#permission-rule").placeholder, "Emails to my team at acme.com"); assert.equal(button("Add rule").disabled, true);
+  await click(button("Cancel"));
+  assert.equal(document.querySelector("#permission-rule"), null); assert.equal(document.querySelectorAll('[role="dialog"]').length, 1); assert.equal(requests.length, 0);
 });
 
 test("Sign Out uses the real logout route, suppresses duplicate clicks and retains Settings on failure", async () => {
