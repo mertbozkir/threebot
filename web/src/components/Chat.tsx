@@ -31,7 +31,7 @@ import { ActivityAvatar, useReportLocalActivity } from "./ActivityAvatar";
 import { canStartFresh, openDialog, botStatus, conversationStatus, loadOlderMessages, loadThreadMeta, selectThread, sendMessage, setDetailsOpen, startSideChat, toast, useApp, useProjectsOn, watchThread } from "../store";
 import { threadKey, threadTarget } from "../lib/t3";
 import { MachineBadge } from "./MachineBadge";
-import { supplementSubagents, threadIdentity, threadLink } from "../lib/threadFamily";
+import { loadedRunFloor, runOrdinal, supplementSubagents, threadIdentity, threadLink } from "../lib/threadFamily";
 import { parseThreadLink } from "../lib/botMessages";
 import { buildEntries, isActiveRun, modelSwitches, workingPhrases, type Entry } from "../lib/transcript";
 import { findTidyTask, readTidyReport, type TidyReport } from "../lib/memoryTidy";
@@ -66,9 +66,15 @@ const ConversationWork = memo(function ConversationWork({ threadId, readOnly }: 
   </>;
 });
 
-const ArtifactPlan = memo(function ArtifactPlan({ threadId, plan }: { threadId: string; plan: Parameters<typeof PlanMessage>[0]["plan"] }) {
+const ArtifactPlan = memo(function ArtifactPlan({ threadId, plan }: { threadId: string; plan: Parameters<typeof PlanMessage>[0]["plan"] & { runId?: string } }) {
   const inTranscript = useApp(s => Object.values(s.threadData[threadId]?.items ?? {}).some(item => (item.type === "todo_list" || item.type === "proposed_plan") && item.planId === plan.id));
-  return inTranscript ? null : <PlanMessage plan={plan} />;
+  // A plan from a run older than the loaded rows belongs to history not shown yet.
+  const beforeLoaded = useApp(s => {
+    const data = s.threadData[threadId];
+    const floor = data ? loadedRunFloor(Object.values(data.items), data.runs, data.hasMoreHistory === true) : null;
+    return floor !== null && (runOrdinal(plan.runId, data?.runs) ?? Infinity) < floor;
+  });
+  return inTranscript || beforeLoaded ? null : <PlanMessage plan={plan} />;
 });
 
 function StopAllButton({ threadId }: { threadId: string }) {
@@ -114,7 +120,10 @@ export function Chat({ bot, threadId = bot.mainThreadId, onBack, embedded = fals
     return () => document.removeEventListener("visibilitychange", refresh);
   }, [threadId]);
 
-  const items = useMemo(() => supplementSubagents(Object.values(data?.items ?? {}), Object.values(data?.subagents ?? {}), threadId ?? ""), [data?.items, data?.subagents, threadId]);
+  const items = useMemo(() => {
+    const loaded = Object.values(data?.items ?? {});
+    return supplementSubagents(loaded, Object.values(data?.subagents ?? {}), threadId ?? "", loadedRunFloor(loaded, data?.runs ?? {}, data?.hasMoreHistory === true));
+  }, [data?.items, data?.subagents, data?.runs, data?.hasMoreHistory, threadId]);
   const providers = useApp((s) => s.providers);
   const sideChat = useApp((s) => s.sideChat);
   const runs = useMemo(() => Object.values(data?.runs ?? {}), [data?.runs]);

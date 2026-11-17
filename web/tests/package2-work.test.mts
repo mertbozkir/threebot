@@ -75,7 +75,7 @@ export { QueuedWork } from ${JSON.stringify(src + "components/QueuedWork.tsx")};
 export { PlanMessage } from ${JSON.stringify(src + "components/PlanMessage.tsx")};
 export { GoalCard } from ${JSON.stringify(src + "components/GoalCard.tsx")};
 export { TaskChanges, PR_DONE_LINGER_MS } from ${JSON.stringify(src + "components/TaskChanges.tsx")};
-export { supplementSubagents } from ${JSON.stringify(src + "lib/threadFamily.ts")};
+export { supplementSubagents, loadedRunFloor } from ${JSON.stringify(src + "lib/threadFamily.ts")};
 export { SubagentRow } from ${JSON.stringify(src + "components/ThreadFamily.tsx")};
 export { useApp } from ${JSON.stringify(src + "store.ts")}; export { t3 } from ${JSON.stringify(src + "lib/t3.ts")};`
           : undefined,
@@ -108,6 +108,7 @@ const {
   runtimeWork,
   readWorkDiff,
   supplementSubagents,
+  loadedRunFloor,
   QueuedWork,
   PlanMessage,
   GoalCard,
@@ -666,6 +667,18 @@ test("projection-only child tasks appear once and keep their real ID", () => {
   assert.equal(items[0].childThreadId, "child");
   assert.equal(supplementSubagents([], [agent], "work")[0], items[0]);
   assert.equal(supplementSubagents(items, [agent], "work").length, 1);
+});
+
+test("a partly loaded thread adds only child tasks from the runs it holds rows for", () => {
+  const row = { id: "row", type: "assistant_message", runId: "run:thread:t:ordinal:214", ordinal: 1 };
+  const runs = { "run:thread:t:ordinal:214": { ordinal: 214 } };
+  assert.equal(loadedRunFloor([row], runs, false), null, "a complete thread has no floor");
+  const floor = loadedRunFloor([row], runs, true);
+  assert.equal(floor, 214);
+  const old = { id: "old", runId: "run:thread:t:ordinal:198", status: "failed", updatedAt: "2026-01-01" };
+  const recent = { id: "recent", runId: "run:thread:t:ordinal:216", status: "running", updatedAt: "2026-01-02" };
+  const items = supplementSubagents([row], [old, recent], "t", floor);
+  assert.deepEqual(items.map((item) => item.subagentId ?? item.id), ["row", "recent"]);
 });
 
 test("ambiguous Queue payload keeps both IDs and dispatch mode across reconstruction", () => {

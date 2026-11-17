@@ -14,15 +14,39 @@ export function sameTaskBot(a: Bot, b: Bot) {
   return a.slug === b.slug && a.mainThreadId === b.mainThreadId && a.name === b.name && a.shape === b.shape && a.color === b.color && a.avatarImage === b.avatarImage;
 }
 
+/** A run's ordinal, from the projection's runs or the T3 run id ("…:ordinal:N"). */
+export function runOrdinal(runId: unknown, runs: Record<string, { ordinal?: number }> = {}): number | null {
+  if (typeof runId !== "string") return null;
+  const known = runs[runId]?.ordinal;
+  if (typeof known === "number") return known;
+  const parsed = /:ordinal:(\d+)$/.exec(runId)?.[1];
+  return parsed ? Number(parsed) : null;
+}
+
+/**
+ * The oldest run a partially loaded thread holds rows for, or null when the whole history is loaded.
+ * Records from older runs (subagents, plans) belong to rows not loaded yet and must not show at the end.
+ */
+export function loadedRunFloor(items: readonly TurnItem[], runs: Record<string, { ordinal?: number }>, partial: boolean): number | null {
+  if (!partial) return null;
+  let floor: number | null = null;
+  for (const item of items) {
+    const ordinal = runOrdinal(item.runId, runs);
+    if (ordinal !== null && (floor === null || ordinal < floor)) floor = ordinal;
+  }
+  return floor;
+}
+
 const taskItems = new WeakMap<object, TurnItem>();
 /** Some native/delegated tasks have a projection record without a visible turn item. */
-export function supplementSubagents(items: TurnItem[], agents: unknown[], threadId: string): TurnItem[] {
+export function supplementSubagents(items: TurnItem[], agents: unknown[], threadId: string, runFloor: number | null = null): TurnItem[] {
   const represented = new Set(items.filter(item => item.type === "subagent").map(item => item.subagentId));
   const additions: TurnItem[] = [];
   const ordinal = Math.max(0, ...items.map(item => item.ordinal));
   for (const value of agents) {
     const agent = record(value);
     if (!agent || typeof agent.id !== "string" || typeof agent.status !== "string" || represented.has(agent.id) || !value || typeof value !== "object") continue;
+    if (runFloor !== null && (runOrdinal(agent.runId) ?? Infinity) < runFloor) continue;
     let item = taskItems.get(value);
     if (!item) {
       item = { ...agent, id: `subagent-record:${agent.id}`, subagentId: agent.id, threadId, runId: typeof agent.runId === "string" ? agent.runId : null, ordinal: ordinal + additions.length + 1, status: agent.status, title: typeof agent.title === "string" ? agent.title : null, type: "subagent", startedAt: typeof agent.startedAt === "string" ? agent.startedAt : null, completedAt: typeof agent.completedAt === "string" ? agent.completedAt : null, updatedAt: typeof agent.updatedAt === "string" ? agent.updatedAt : "", parentItemId: null };
