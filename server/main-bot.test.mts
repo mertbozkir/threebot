@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
@@ -123,4 +123,40 @@ test('settings instruction refresh and replacement share the writer, so old prom
   await Promise.all([registry.refreshInstructions(), registry.select('beta'), registry.refreshInstructions()]);
   assert.doesNotMatch(instructions.get('alpha')!, /You are the primary Bot/);
   assert.match(instructions.get('beta')!, /You are the primary Bot/);
+});
+
+test('cached roster follows external metadata, additions, removals, trash and restore', async (t) => {
+  const { registry, botsRoot, file } = await fixture(t, { alpha: { primary: true }, beta: { mainThreadId: 'thread-b' } });
+  const first = await registry.list();
+  assert.deepEqual(await registry.list(), first);
+  const beta = JSON.parse(await readFile(file('beta'), 'utf8'));
+  await writeFile(file('beta'), JSON.stringify({ ...beta, name: 'Changed' }));
+  assert.equal((await registry.get('beta'))?.name, 'Changed');
+  await mkdir(path.dirname(file('gamma')), { recursive: true });
+  await writeFile(file('gamma'), JSON.stringify({ name: 'Gamma', createdAt: '2026-01-01' }));
+  assert.equal((await registry.list()).length, 3);
+  await rm(path.join(botsRoot, 'gamma'), { recursive: true });
+  assert.equal((await registry.list()).length, 2);
+  const trash = path.join(botsRoot, '.botapp/trash');
+  assert.deepEqual(await archivedBotIdentities(trash), []);
+  await registry.remove('beta');
+  const archived = await archivedBotIdentities(trash);
+  assert.equal(archived[0].name, 'Changed');
+  assert.deepEqual(await archivedBotIdentities(trash), archived);
+  await writeFile(path.join(archived[0].workspaceRoot, '.bot/bot.json'), JSON.stringify({ ...beta, name: 'Archived edit' }));
+  assert.equal((await archivedBotIdentities(trash))[0].name, 'Archived edit');
+  await rename(archived[0].workspaceRoot, path.join(botsRoot, 'beta'));
+  assert.deepEqual(await archivedBotIdentities(trash), []);
+  assert.equal((await registry.get('beta'))?.name, 'Archived edit');
+});
+
+test('cached metadata does not expose mutable nested state and external primary flags are repaired', async (t) => {
+  const { registry, file } = await fixture(t, { alpha: { primary: true, extra: { value: 1 } }, beta: {} });
+  const first = await registry.list();
+  (first[0].extra as { value: number }).value = 99;
+  assert.equal(((await registry.get('alpha'))!.extra as { value: number }).value, 1);
+  const beta = JSON.parse(await readFile(file('beta'), 'utf8'));
+  await writeFile(file('beta'), JSON.stringify({ ...beta, primary: true }));
+  assertMain(await registry.list(), 'alpha');
+  assert.equal(JSON.parse(await readFile(file('beta'), 'utf8')).primary, false);
 });
