@@ -25,7 +25,7 @@ const bundle = await buildOnce({
       export { ConnectedAppsSection } from ${JSON.stringify(`${src}components/Details.tsx`)};
       export { useApp } from ${JSON.stringify(`${src}store.ts`)};` : undefined,
     transform: (code, id) => isModule(id, `${src}components/Details.tsx`) ? { code: `${code}\nexport { ConnectedAppsSection };`, map: null } : undefined }],
-  ssr: { noExternal: true }, build: { ssr: "virtual:connected-apps-tests", write: false },
+  ssr: { noExternal: true }, build: { ssr: "virtual:connected-apps-tests", write: false, rollupOptions: { output: { inlineDynamicImports: true } } },
 });
 const testDir = await mkdtemp(join(tmpdir(), "bot-connected-apps-"));
 const testEntry = join(testDir, "components.mjs");

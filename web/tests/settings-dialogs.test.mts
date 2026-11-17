@@ -44,7 +44,7 @@ const bundle = await buildOnce({
       export { Modal } from ${JSON.stringify(`${src}components/ui.tsx`)};
       export { useApp } from ${JSON.stringify(`${src}store.ts`)};` : undefined,
     transform: (code, id) => isModule(id, `${src}components/Details.tsx`) ? { code: `${code}\nexport { AvatarDialog };`, map: null } : undefined }],
-  ssr: { noExternal: true }, build: { ssr: "virtual:settings-tests", write: false },
+  ssr: { noExternal: true }, build: { ssr: "virtual:settings-tests", write: false, rollupOptions: { output: { inlineDynamicImports: true } } },
 });
 const entry = entryChunk(bundle);
 assert.ok(entry);
