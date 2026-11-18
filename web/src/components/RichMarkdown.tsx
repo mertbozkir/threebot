@@ -1,13 +1,12 @@
-import { useMemo, type ComponentPropsWithoutRef } from "react";
+import { lazy, Suspense, type ComponentPropsWithoutRef } from "react";
 import ReactMarkdown, { defaultUrlTransform, type Components, type ExtraProps, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math-extended";
-import katex from "katex";
+import { escapePriceDollars } from "../lib/currencyDollars";
 import { remarkBotLinks } from "../lib/remarkBotLinks";
 import { parseThreadLink } from "../lib/botMessages";
 import { MarkdownCodeBlock } from "./MarkdownCodeBlock";
 import { MermaidDiagram } from "./MermaidDiagram";
-import "katex/dist/katex.min.css";
 import "./MermaidDiagram.css";
 
 export type RichMarkdownProps = {
@@ -21,13 +20,10 @@ function literalCode(node: ExtraProps["node"]) {
   return node?.children.map((child) => child.type === "text" ? child.value : "").join("") ?? "";
 }
 
+const LazyMathMarkup = lazy(() => import("./MathMarkup"));
+
 function MathMarkup({ source, display }: { source: string; display: boolean }) {
-  const html = useMemo(() => source.length <= 20000 ? katex.renderToString(source, {
-    displayMode: display, output: "htmlAndMathml", trust: false, throwOnError: false,
-    strict: "ignore", maxExpand: 1000, maxSize: 20,
-  }) : null, [source, display]);
-  if (html === null) return <code className="rich-math-literal">{source}</code>;
-  return <span className={display ? "rich-math rich-math-display" : "rich-math"} dangerouslySetInnerHTML={{ __html: html }} />;
+  return <Suspense fallback={<code className="rich-math-literal">{source}</code>}><LazyMathMarkup source={source} display={display} /></Suspense>;
 }
 
 function RichCode({ node, children, className, ...props }: ComponentPropsWithoutRef<"code"> & ExtraProps) {
@@ -53,5 +49,5 @@ export function RichMarkdown({ children, bots = [], components, urlTransform }: 
     remarkPlugins={[remarkGfm, [remarkMath, { backslashDelimiters: true }], [remarkBotLinks, { bots }]]}
     components={{ ...components, pre: RichPre, code: RichCode }}
     urlTransform={urlTransform ?? ((url) => parseThreadLink(url) || url.startsWith("bot:") ? url : defaultUrlTransform(url))}
-  >{children}</ReactMarkdown>;
+  >{escapePriceDollars(children)}</ReactMarkdown>;
 }

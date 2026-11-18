@@ -50,7 +50,7 @@ const bundle = await buildOnce({
       export { createElement, act } from 'react';
       export { createRoot } from 'react-dom/client';` : undefined,
     transform: (code, id) => id.endsWith('/components/RichMarkdown.tsx') ? code.replace('export function RichMarkdown({ children, bots = [], components, urlTransform }: RichMarkdownProps) {', 'export function RichMarkdown({ children, bots = [], components, urlTransform }: RichMarkdownProps) { globalThis.markdownParses = (globalThis.markdownParses ?? 0) + 1;') : undefined,
-  }], ssr: { noExternal: true }, build: { ssr: 'virtual:chat-scroll', write: false },
+  }], ssr: { noExternal: true }, build: { rollupOptions: { output: { inlineDynamicImports: true } }, ssr: 'virtual:chat-scroll', write: false },
 });
 const entry = entryChunk(bundle);
 assert.ok(entry);

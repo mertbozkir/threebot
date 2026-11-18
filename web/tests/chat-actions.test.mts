@@ -37,7 +37,7 @@ const bundle = await buildOnce({
       export { useApp } from ${JSON.stringify(`${src}store.ts`)};
       export { t3 } from ${JSON.stringify(`${src}lib/t3.ts`)};` : undefined,
     transform: (code, id) => isModule(id, chat) ? { code: `${code}\nexport { EntryView, AttachmentList };`, map: null } : undefined,
-  }], ssr: { noExternal: true }, build: { ssr: "virtual:chat-actions-tests", write: false },
+  }], ssr: { noExternal: true }, build: { rollupOptions: { output: { inlineDynamicImports: true } }, ssr: "virtual:chat-actions-tests", write: false },
 });
 const entry = entryChunk(bundle);
 assert.ok(entry);

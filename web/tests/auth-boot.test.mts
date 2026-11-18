@@ -19,7 +19,7 @@ const src = fileURLToPath(new URL('../src/', import.meta.url));
 const bundle = await buildOnce({ configFile: false, logLevel: 'silent', define: { 'process.env.NODE_ENV': '"development"' }, ssr: { noExternal: true },
  plugins: [{ name: 'auth-boot-test', resolveId: id => id.endsWith('virtual:auth-boot') ? '\0auth-boot' : undefined,
  load: id => id === '\0auth-boot' ? `export { createElement as h, act, StrictMode } from 'react'; export { createRoot } from 'react-dom/client'; export { default as App } from ${JSON.stringify(`${src}App.tsx`)}; export { boot, useApp } from ${JSON.stringify(`${src}store.ts`)}; export { api } from ${JSON.stringify(`${src}lib/api.ts`)}; export { t3 } from ${JSON.stringify(`${src}lib/t3.ts`)};` : undefined }],
- build: { ssr: 'virtual:auth-boot', write: false, rollupOptions: { output: { entryFileNames: 'entry.mjs', chunkFileNames: '[name]-[hash].mjs' } } } });
+ build: { ssr: 'virtual:auth-boot', write: false, rollupOptions: { output: { entryFileNames: 'entry.mjs', inlineDynamicImports: true } } } });
 for (const output of bundle.output) { const file = join(directory, output.fileName); await mkdir(dirname(file), { recursive: true }); await writeFile(file, output.type === 'chunk' ? output.code : output.source); }
 let serial = 0, app, root, host, handler, calls, runtime, intervals;
 const flush = () => new Promise(resolve => setImmediate(resolve));

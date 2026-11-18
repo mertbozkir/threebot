@@ -38,7 +38,7 @@ const bundle = await buildOnce({
       export { t3 } from ${JSON.stringify(`${src}lib/t3.ts`)};` : undefined,
     transform: (code, id) => isModule(id, `${src}components/Chat.tsx`) ? { code: `${code}\nexport { Composer };`, map: null } : undefined,
   }],
-  ssr: { noExternal: true }, build: { ssr: "virtual:mobile-composer", write: false },
+  ssr: { noExternal: true }, build: { rollupOptions: { output: { inlineDynamicImports: true } }, ssr: "virtual:mobile-composer", write: false },
 });
 const entry = entryChunk(bundle);
 assert.ok(entry);
