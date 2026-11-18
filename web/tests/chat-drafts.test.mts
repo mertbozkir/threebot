@@ -40,7 +40,7 @@ const bundle = await buildOnce({
       export { chatDraft } from ${JSON.stringify(`${src}lib/chatDrafts.ts`)};` : undefined,
     transform: (code, id) => isModule(id, `${src}components/Chat.tsx`) ? { code: `${code}\nexport { Composer };`, map: null } : undefined,
   }],
-  ssr: { noExternal: true }, build: { ssr: "virtual:chat-drafts", write: false },
+  ssr: { noExternal: true }, build: { rollupOptions: { output: { inlineDynamicImports: true } }, ssr: "virtual:chat-drafts", write: false },
 });
 const entry = entryChunk(bundle);
 assert.ok(entry);

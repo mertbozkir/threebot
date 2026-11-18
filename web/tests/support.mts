@@ -1,5 +1,7 @@
 // Shared typing for the web tests: they build the app with Vite and drive it through happy-dom.
 import assert from "node:assert/strict";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import type { Window as HappyWindow } from "happy-dom";
 import { build, type InlineConfig } from "vite";
 
@@ -34,4 +36,20 @@ export function entryChunk(bundle: BuildOutput) {
   const entry = bundle.output.find((output) => output.type === "chunk" && output.isEntry);
   assert.ok(entry?.type === "chunk", "the bundle has an entry chunk");
   return entry;
+}
+
+/**
+ * Writes the entry chunk as `name` in `dir`, next to every other chunk at its own path, so an entry
+ * that imports shared chunks (as code-split lazy features do) still loads. Returns the entry's path.
+ */
+export async function writeBundle(bundle: BuildOutput, dir: string, name: string): Promise<string> {
+  const entry = entryChunk(bundle);
+  for (const output of bundle.output) {
+    if (output.type !== "chunk" || output === entry) continue;
+    await mkdir(dirname(join(dir, output.fileName)), { recursive: true });
+    await writeFile(join(dir, output.fileName), output.code);
+  }
+  const file = join(dir, name);
+  await writeFile(file, entry.code);
+  return file;
 }

@@ -38,7 +38,7 @@ const bundle = await buildOnce({
       export { createRoot } from 'react-dom/client';
     ` : undefined,
     transform: (code, id) => isModule(id, chat) ? { code: code + '\nexport { MessageContent };', map: null } : undefined,
-  }], build: { ssr: 'virtual:workspace-test', write: false },
+  }], build: { rollupOptions: { output: { inlineDynamicImports: true } }, ssr: 'virtual:workspace-test', write: false },
 });
 const entry = entryChunk(bundle);
 assert.ok(entry);

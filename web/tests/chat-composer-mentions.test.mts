@@ -49,7 +49,7 @@ const bundle = await buildOnce({
       isModule(id, `${src}components/Chat.tsx`) ? { code: `${code}\nexport { Composer };`, map: null } : undefined,
   }],
   ssr: { noExternal: true },
-  build: { ssr: "virtual:composer-mentions", write: false },
+  build: { rollupOptions: { output: { inlineDynamicImports: true } }, ssr: "virtual:composer-mentions", write: false },
 });
 
 const entry = entryChunk(bundle);

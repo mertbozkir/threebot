@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { createJsonCache } from "./cached-json.mts";
 import { ADOPTED_DATA, readAdopted, type AdoptedBot } from "./adopted-bots.mts";
 
 /** A Bot as the app sees it: its `.bot/bot.json`, with defaults filled in, plus where its folder is. */
@@ -43,6 +44,7 @@ async function writeJson(file: string, value: unknown) {
 export function createMainBotRegistry({ botsRoot, onBotChanged = async () => {} }: { botsRoot: string; onBotChanged?: (bot: Bot) => Promise<unknown> }) {
   const selectionFile = path.join(botsRoot, ".botapp", "main-bot.json");
   let pending: Promise<unknown> = Promise.resolve();
+  const metadataCache = createJsonCache();
   function exclusive<T>(operation: () => T | Promise<T>): Promise<T> {
     const result = pending.then(operation);
     pending = result.catch(() => {});
@@ -64,7 +66,7 @@ export function createMainBotRegistry({ botsRoot, onBotChanged = async () => {} 
     });
     const bots: Bot[] = [];
     const add = async (slug: string, entry: AdoptedBot | null) => {
-      const meta = await readJson(metadataFile(slug), null);
+      const meta = await metadataCache.read(metadataFile(slug), null);
       if (!meta) return;
       const createdAt = meta.createdAt ?? (await fs.stat(metadataFile(slug))).birthtime.toISOString();
       const workspaceRoot = directory(slug);
@@ -76,17 +78,15 @@ export function createMainBotRegistry({ botsRoot, onBotChanged = async () => {} 
         dataDir: entry ? path.join(workspaceRoot, ADOPTED_DATA) : workspaceRoot,
       });
     };
-    for (const entry of entries) {
-      if (!entry.isDirectory() || !SLUG.test(entry.name)) continue;
-      // An adopted Bot owns its slug; a BOTS_ROOT folder with the same name waits until it's renamed.
-      if (adopted.has(entry.name)) continue;
-      await add(entry.name, null);
-    }
-    for (const entry of adopted.values()) if (SLUG.test(entry.slug)) await add(entry.slug, entry);
+    const local = entries.filter((entry) => entry.isDirectory() && SLUG.test(entry.name) && !adopted.has(entry.name));
+    const external = [...adopted.values()].filter((entry) => SLUG.test(entry.slug));
+    metadataCache.retain(new Set([...local.map((entry) => metadataFile(entry.name)), ...external.map((entry) => metadataFile(entry.slug))]));
+    await Promise.all([...local.map((entry) => add(entry.name, null)), ...external.map((entry) => add(entry.slug, entry))]);
     return bots.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.slug.localeCompare(b.slug));
   }
 
   async function persistMetadata(bot: { slug: string; [key: string]: unknown }) {
+    metadataCache.clear();
     await writeJson(metadataFile(bot.slug), withoutDerived(bot));
   }
 
@@ -167,6 +167,7 @@ export function createMainBotRegistry({ botsRoot, onBotChanged = async () => {} 
       if (current.primary && bots.length > 1) throw failure("Choose another main Bot before deleting this Bot.");
       const trash = path.join(botsRoot, ".botapp", "trash");
       await fs.mkdir(trash, { recursive: true });
+      metadataCache.clear();
       await fs.rename(directory(slug), path.join(trash, `${slug}-${Date.now()}`));
       return reconcile();
     }),
@@ -181,6 +182,7 @@ export function createMainBotRegistry({ botsRoot, onBotChanged = async () => {} 
       if (!current) throw failure("Bot not found", 404);
       if (!current.adopted) throw failure("Only a Bot made from a project can be turned back into one.");
       if (current.primary && bots.length > 1) throw failure("Choose another main Bot first.");
+      metadataCache.clear();
       await undo(current);
       return reconcile();
     }),
