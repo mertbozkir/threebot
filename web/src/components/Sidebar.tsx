@@ -193,7 +193,9 @@ export function Sidebar({ wide = false }: { wide?: boolean }) {
   };
 
   if (!wide && compact) return <aside className="compact-sidebar flex h-full w-[88px] shrink-0 flex-col bg-sidebar" aria-label="Bots" aria-description="Toggle compact sidebar" aria-keyshortcuts="Meta+B">
-    <div className="h-[52px] shrink-0" />
+    <div className="flex h-[60px] shrink-0 items-end justify-center">
+      <RoundButton onClick={() => setSidebarCompact(false)} title="Expand sidebar (⌘B)" aria-label="Expand sidebar" aria-keyshortcuts="Meta+B"><PanelLeftOpen size={16} /></RoundButton>
+    </div>
     <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-4">
       {[pinned, ...groups.map((g) => g.bots)].filter((group) => group.length).map((group, index) => <div key={index} className="flex flex-col items-center gap-2 border-b border-line py-3 last:border-0">{group.map((bot) => {
         const status = botStatus(bot);
@@ -201,7 +203,7 @@ export function Sidebar({ wide = false }: { wide?: boolean }) {
       })}</div>)}
       <RoomsCompact />
     </div>
-    <div className="flex shrink-0 flex-col items-center gap-2 pt-2">{projectsOn && <RoundButton onClick={() => openProjects()} title="Projects" aria-label="Projects" aria-current={page === "projects" ? "page" : undefined} className={page === "projects" ? "bg-active" : undefined}><FolderKanban size={17} /></RoundButton>}<RoundButton onClick={openCreate} title="Create" aria-label="Create"><Plus size={18} /></RoundButton><RoundButton onClick={() => setSidebarCompact(false)} title="Expand sidebar (⌘B)" aria-label="Expand sidebar" aria-keyshortcuts="Meta+B"><PanelLeftOpen size={17} /></RoundButton><RoundButton onClick={() => openDialog("connect-apps")} title="Connect apps" aria-label="Connect apps"><LayoutGrid size={17} /></RoundButton><UpdateButton /></div>
+    <div className="flex shrink-0 flex-col items-center pt-2 empty:hidden"><UpdateButton /></div>
     <AccountRow compact />
     {menu && <Menu {...menu} onClose={() => setMenu(null)} />}
   </aside>;
