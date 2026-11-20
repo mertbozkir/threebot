@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import clsx from "clsx";
-import { Archive, ArrowLeftRight, Bot as BotIcon, FolderKanban, CircleCheck, ArrowUp, ArrowDown, RotateCcw, Check, ChevronDown, ChevronRight, ChevronUp, CloudDownload, Copy, Ellipsis, EyeOff, Eye, Folder, FolderInput, FolderPlus, Gauge, Grid2x2Plus, LayoutGrid, ListChecks, LogOut, MailOpen, Paperclip, Pencil, Pin, PinOff, Plus, Search, Send, Settings as SettingsIcon, Smartphone, Star, Trash2, Users } from "lucide-react";
+import { Archive, ArrowLeftRight, Bot as BotIcon, FolderKanban, CircleCheck, ArrowUp, ArrowDown, RotateCcw, Check, ChevronDown, ChevronRight, ChevronUp, CloudDownload, Copy, Ellipsis, EyeOff, Eye, Folder, FolderInput, FolderPlus, Gauge, Grid2x2Plus, LayoutGrid, ListChecks, LogOut, MailOpen, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, PinOff, Plus, Search, Send, Settings as SettingsIcon, Smartphone, Star, Trash2, Users } from "lucide-react";
 import { ActivityAvatar } from "./ActivityAvatar";
 import { Menu, Modal, Pill, RoundButton, type MenuItem } from "./ui";
 import { useUsagePeak } from "./UsagePanel";
 import { UpdatePopover, useUpdateNotice } from "./RemoteAccess";
-import { archiveThread, archivedInT3, unarchiveBotProject, isSettled, setThreadDone, botStatus, mainThread, markThreadRead, markThreadUnread, openDialog, openProjects, saveSettings, select, toast, updateBot, useApp, useProjectsOn, type BotStatus } from "../store";
+import { archiveThread, archivedInT3, unarchiveBotProject, isSettled, setThreadDone, botStatus, mainThread, markThreadRead, markThreadUnread, openDialog, openProjects, saveSettings, select, setSidebarCompact, toast, updateBot, useApp, useProjectsOn, type BotStatus } from "../store";
 import { followBoard, isOpenTask, useBoard } from "../lib/projects";
 import { copyText } from "../lib/t3";
 import { api, signOutTarget } from "../lib/api";
@@ -201,7 +201,7 @@ export function Sidebar({ wide = false }: { wide?: boolean }) {
       })}</div>)}
       <RoomsCompact />
     </div>
-    <div className="flex shrink-0 flex-col items-center gap-2 pt-2">{projectsOn && <RoundButton onClick={() => openProjects()} title="Projects" aria-label="Projects" aria-current={page === "projects" ? "page" : undefined} className={page === "projects" ? "bg-active" : undefined}><FolderKanban size={17} /></RoundButton>}<RoundButton onClick={openCreate} title="Create" aria-label="Create"><Plus size={18} /></RoundButton><RoundButton onClick={() => openDialog("connect-apps")} title="Connect apps" aria-label="Connect apps"><LayoutGrid size={17} /></RoundButton><UpdateButton /></div>
+    <div className="flex shrink-0 flex-col items-center gap-2 pt-2">{projectsOn && <RoundButton onClick={() => openProjects()} title="Projects" aria-label="Projects" aria-current={page === "projects" ? "page" : undefined} className={page === "projects" ? "bg-active" : undefined}><FolderKanban size={17} /></RoundButton>}<RoundButton onClick={openCreate} title="Create" aria-label="Create"><Plus size={18} /></RoundButton><RoundButton onClick={() => setSidebarCompact(false)} title="Expand sidebar (⌘B)" aria-label="Expand sidebar" aria-keyshortcuts="Meta+B"><PanelLeftOpen size={17} /></RoundButton><RoundButton onClick={() => openDialog("connect-apps")} title="Connect apps" aria-label="Connect apps"><LayoutGrid size={17} /></RoundButton><UpdateButton /></div>
     <AccountRow compact />
     {menu && <Menu {...menu} onClose={() => setMenu(null)} />}
   </aside>;
@@ -214,7 +214,10 @@ export function Sidebar({ wide = false }: { wide?: boolean }) {
         </RoundButton>
         {wide
           ? <button className="mobile-account grid size-11 place-items-center rounded-full border border-line bg-elevated text-[18px] font-semibold" aria-label="Settings" onClick={() => { useApp.setState({ settingsPane: "overview" }); openDialog("settings"); }}>{(settings?.userName || "You")[0].toUpperCase()}</button>
-          : <RoundButton className="new-bot-button" onClick={openCreate} title="Create" aria-label="Create"><Plus size={16} /></RoundButton>}
+          : <>
+              <RoundButton className="new-bot-button" onClick={openCreate} title="Create" aria-label="Create"><Plus size={16} /></RoundButton>
+              <RoundButton onClick={() => setSidebarCompact(true)} title="Collapse sidebar (⌘B)" aria-label="Collapse sidebar" aria-keyshortcuts="Meta+B"><PanelLeftClose size={16} /></RoundButton>
+            </>}
       </div>
 
       {wide && attention && <button className="mobile-attention pop-in" aria-label={`Jump to the chat needing attention ${attention}`} onClick={jumpToAttention}>Needs attention{attention === "above" ? <ChevronUp size={18} aria-hidden="true" /> : <ChevronDown size={18} aria-hidden="true" />}</button>}
