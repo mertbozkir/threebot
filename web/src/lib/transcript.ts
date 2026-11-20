@@ -99,8 +99,35 @@ export function modelSwitches(runs: Run[], modelName: (selection: ModelSelection
   return switches;
 }
 
+/**
+ * Some agents (Antigravity) send the command under a name T3 doesn't read, so the approval's
+ * prompt is only the tool's title ("Ran command"). The command item for the same native tool
+ * call carries the command as `input`; show that instead.
+ */
+function withCommandText(approval: TurnItem, commandInputs: Map<string, { input: string; title: string | null } | null>): TurnItem {
+  if (approval.requestKind !== "command") return approval;
+  const key = commandKey(approval);
+  const tool = key ? commandInputs.get(key) : undefined;
+  if (!tool || (approval.prompt && approval.prompt !== tool.title)) return approval;
+  return { ...approval, prompt: tool.input };
+}
+
+/** One tool call: same run, same driver, same native id. A card the user approves must never borrow another call's command. */
+function commandKey(item: TurnItem): string | null {
+  const ref = item.nativeItemRef;
+  return typeof ref?.nativeId === "string" && ref.nativeId ? JSON.stringify([item.runId ?? null, ref.driver ?? null, ref.nativeId]) : null;
+}
+
 export function buildEntries(items: TurnItem[], ctx: Ctx): Entry[] {
   const sorted = [...items].sort((a, b) => a.ordinal - b.ordinal || (a.startedAt ?? "").localeCompare(b.startedAt ?? ""));
+  // null marks an ambiguous key (two command items for one call): such approvals keep their own text.
+  const commandInputs = new Map<string, { input: string; title: string | null } | null>();
+  for (const item of items) {
+    const key = commandKey(item);
+    if (item.type === "command_execution" && key && typeof item.input === "string" && item.input.trim()) {
+      commandInputs.set(key, commandInputs.has(key) ? null : { input: item.input.trim(), title: item.title });
+    }
+  }
   // T3 can append the resumed message before the question's answer update.
   // Fold only messages whose answer card is actually present, in any order.
   const answeredMessages = new Set(items.flatMap((item) => {
@@ -178,7 +205,7 @@ export function buildEntries(items: TurnItem[], ctx: Ctx): Entry[] {
         break;
       }
       case "approval_request":
-        out.push({ kind: "approval", id: i.id, item: i, request: findRequest(ctx.requests, i.requestId) });
+        out.push({ kind: "approval", id: i.id, item: withCommandText(i, commandInputs), request: findRequest(ctx.requests, i.requestId) });
         break;
       case "user_input_request":
         out.push({ kind: "question", id: i.id, item: i, request: findRequest(ctx.requests, i.requestId) });
