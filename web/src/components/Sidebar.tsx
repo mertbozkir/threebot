@@ -347,13 +347,13 @@ function ProjectsRow({ large, current }: { large: boolean; current: boolean }) {
 
 function MapRow({ large, compact, current }: { large: boolean; compact: boolean; current: boolean }) {
   const icon = <MapIcon size={large ? 20 : 17} aria-hidden="true" />;
-  return <button type="button" onClick={openBotMap} aria-label="Map" title="Map" aria-current={current ? "page" : undefined}
+  return <button type="button" onClick={openBotMap} aria-label="Bot Map" title="Bot Map" aria-current={current ? "page" : undefined}
     className={clsx("rounded-[10px] transition-colors", current ? "bg-active" : "hover:bg-hover",
-      compact ? clsx("mx-auto grid shrink-0 place-items-center text-muted", large ? "size-11" : "size-9")
+      compact ? clsx("flex shrink-0 items-center gap-1.5 px-2.5 text-[13px] text-muted", large ? "h-11" : "h-9")
         : clsx("flex w-full items-center gap-3 px-2 text-left", large ? "py-[9px]" : "py-[7px]"))}>
-    {compact ? icon : <>
+    {compact ? <><span>Bot Map</span>{icon}</> : <>
       <span className={clsx("grid shrink-0 place-items-center rounded-[12px] border border-line text-muted", large ? "size-11" : "size-9")}>{icon}</span>
-      <span className="text-[13.5px]">Map</span>
+      <span className="text-[13.5px]">Bot Map</span>
     </>}
   </button>;
 }

@@ -9,8 +9,8 @@ type Projection = { visibleTurnItems?: ItemRow[] | null; turnItems?: ItemRow[] |
 type RecentItems = { threadId: string; items: ItemRow[] };
 type Edge = { from: string; to: string; count: number };
 
-const WINDOW_SIZE = 200;
-const CACHE_MS = 60_000;
+const WINDOW_SIZE = 2000;
+const CACHE_MS = 5 * 60_000;
 const CONCURRENCY = 4;
 
 export function aggregateBotEdges(bots: MapBot[], threads: MapThread[], recent: RecentItems[]): Edge[] {
