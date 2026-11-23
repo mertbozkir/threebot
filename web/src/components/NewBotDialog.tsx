@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronRight, FolderGit2, Pencil } from "lucide-react";
+import { ChevronDown, ChevronRight, FolderGit2, Pencil } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { AvatarEditorDialog, AvatarPicker, type AvatarDraft } from "./AvatarEditor";
 import { Modal, Pill, Spinner } from "./ui";
@@ -63,11 +63,14 @@ export function NewBotDialog() {
             placeholder="Name your Bot"
             className="new-bot-name mt-4 h-10 w-full rounded-xl border border-line bg-transparent text-center text-[14px] outline-none placeholder:text-faint focus:border-line-strong"
           />
-          <select aria-label="Section" value={sectionChoice} disabled={busy} onChange={(e) => setSectionChoice(e.target.value)} className="new-bot-section mt-2 h-9 w-full rounded-xl border border-line bg-elevated px-3 text-[13px] outline-none focus:border-line-strong">
+          <span className="relative mt-2 block w-full">
+          <select aria-label="Section" value={sectionChoice} disabled={busy} onChange={(e) => setSectionChoice(e.target.value)} className="new-bot-section h-9 w-full rounded-xl border border-line px-9 text-[14px] outline-none focus:border-line-strong">
             <option value="">Unassigned</option>
             {sections?.map((section) => <option key={section} value={SECTION_PREFIX + section}>{section}</option>)}
             <option value="new">New section…</option>
           </select>
+          <ChevronDown size={16} aria-hidden="true" className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-muted" />
+          </span>
           {newSection && <input
             aria-label="Section name"
             placeholder="Section name"

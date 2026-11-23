@@ -450,17 +450,7 @@ button {
   .search-close { display: grid; flex: none; width: 46px; height: 46px; place-items: center; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--bg-elevated); }
 }
 
-@supports (appearance: base-select) {
-  .new-bot-section, .new-bot-section::picker(select) { appearance: base-select; }
-  .new-bot-section::picker(select) {
-    margin-top: 4px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--bg-elevated);
-    color: var(--fg);
-  }
-  .new-bot-section option { padding: 6px 12px; }
-}
+.new-bot-section { appearance: none; background: transparent; text-align-last: center; }
 
 .bot-mention { font-size: inherit; line-height: inherit; vertical-align: baseline; }
 .md .bot-mention { display: inline-flex; }
