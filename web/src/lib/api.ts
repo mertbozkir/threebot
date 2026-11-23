@@ -62,7 +62,7 @@ export type DesktopStatus = { state: "off" | "unavailable" | "building" | "stopp
 export type BotMapEdge = { from: string; to: string; count: number };
 
 export const api = {
-  botMap: (signal?: AbortSignal) => req<{ edges: BotMapEdge[] }>("/api/bot-map", { signal }),
+  botMap: (signal?: AbortSignal) => req<{ edges: BotMapEdge[]; unread: string[] }>("/api/bot-map", { signal }),
   desktop: (slug: string) => req<DesktopStatus>(`/api/desktop/${encodeURIComponent(slug)}`),
   wakeDesktop: (slug: string) => req<DesktopStatus>(`/api/desktop/${encodeURIComponent(slug)}/wake`, { method: "POST", body: "{}" }),
   typeDesktop: (slug: string, text: string) => req<{ ok: true }>(`/api/desktop/${encodeURIComponent(slug)}/type`, { method: "POST", body: JSON.stringify({ text }) }),

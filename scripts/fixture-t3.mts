@@ -235,7 +235,7 @@ export async function startFakeT3(root: string, port = 0, { scenario = 'basic', 
   const publish = () => {
     for (const [ws, subs] of subscriptions) for (const [id, sub] of subs) {
       if (sub.tag === 'orchestration.subscribeShell') chunk(ws, id, { kind: 'snapshot', snapshot: { projects, threads: threads.filter((t) => !t.archivedAt) } });
-      if (sub.tag === 'orchestration.subscribeThread') chunk(ws, id, { kind: 'snapshot', projection: projection(sub.threadId!) });
+      if (sub.tag === 'orchestration.subscribeThread') chunk(ws, id, { kind: 'snapshot', snapshotSequence: sequence, projection: projection(sub.threadId!) });
       if (sub.tag === 'scheduledTasks.subscribe' && latest) chunk(ws, id, { tasks: latest.tasks });
     }
   };
@@ -410,7 +410,7 @@ export async function startFakeT3(root: string, port = 0, { scenario = 'basic', 
         if (tag === 'orchestration.subscribeThread') {
           if (!items.has(payload.threadId)) return fail(ws, id, 'Unknown fixture thread');
           subs.set(id, { tag, threadId: payload.threadId });
-          return chunk(ws, id, { kind: 'snapshot', projection: projection(payload.threadId) });
+          return chunk(ws, id, { kind: 'snapshot', snapshotSequence: sequence, projection: projection(payload.threadId) });
         }
         if (tag === 'peerLinks.list' && links) return exit(ws, id, { links: links.map(({ threads: _threads, tasks: _tasks, ...link }) => ({ ...link, access: 'full-access', linkedAt: STAMP, expiresAt: '2099-01-01T00:00:00.000Z', lastReachedAt: STAMP, lastError: null })) });
         if (tag === 'server.getConfig') return exit(ws, id, serverConfig());
