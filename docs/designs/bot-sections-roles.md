@@ -7,7 +7,7 @@ Status: approved (2026-11-23). Bot Creator is an identity only; the badge says "
 A Bot gets its section (Work, Personal, …) only after it exists: you open its menu and move it. The create dialog has no section, so new Bots land in Unassigned. Two Bots also have a job no other Bot has, and the app shows only one of them:
 
 - **Main Bot**: the Bot that runs everything (Chief of Staff). It already exists as `primary`, shown with a star.
-- **Bot Creator**: the Bot that designs and audits the other Bots (Bot Ops; in Grok this role is called Dr. Eggbot). The app has no notion of it.
+- **Bot Creator**: the Bot that designs and audits the other Bots. The app has no notion of it.
 
 ## Goals
 
