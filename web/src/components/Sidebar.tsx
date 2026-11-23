@@ -188,7 +188,7 @@ export function Sidebar({ wide = false }: { wide?: boolean }) {
         ...(!pinned ? lifecycleItems(thread) : []),
         unreadItem,
         ...(pinItem ? [pinItem] : []),
-        ...(bot.primary ? [mainBotItem, creatorItem] : []),
+        ...(bot.primary ? [mainBotItem] : []),
         ...(moveItems.length ? [{ label: "Move to", icon: <Folder size={14} />, items: moveItems }] : []),
         hideItem,
         { label: "More", icon: <Ellipsis size={14} />, items: [...(pinned ? lifecycleItems(thread) : []), ...(bot.primary ? [] : [mainBotItem, creatorItem]), renameItem, copyIdItem, deleteItem] },
