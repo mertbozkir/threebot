@@ -51,11 +51,11 @@ test("sidebar opens Map with Projects off or on", async () => {
         useApp.setState({ settings: { sections: [], beta: { projects } }, page: null });
         root.render(h(Sidebar));
       });
-      const map = document.querySelector<HTMLButtonElement>('button[aria-label="Bot Map"]');
+      const map = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.startsWith("Bot Map"));
       assert.ok(map, `Map entry with Projects ${projects ? "on" : "off"}`);
-      assert.equal(Boolean(document.querySelector(".projects-nav")), projects);
-      assert.equal(map.textContent?.trim(), "Bot Map");
-      if (projects) assert.equal(map.previousElementSibling?.classList.contains("projects-nav"), true);
+      assert.equal(document.querySelectorAll(".projects-nav").length, projects ? 2 : 1);
+      assert.match(map.textContent ?? "", /^Bot Map\d+ Bots?$/);
+      if (projects) assert.match(map.previousElementSibling?.textContent ?? "", /^Projects/);
       await act(async () => map.click());
       assert.equal(useApp.getState().page, "map");
       assert.equal(map.getAttribute("aria-current"), "page");
