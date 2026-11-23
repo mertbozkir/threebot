@@ -6,7 +6,7 @@ import { ADOPTED_DATA, readAdopted, type AdoptedBot } from "./adopted-bots.mts";
 /** A Bot as the app sees it: its `.bot/bot.json`, with defaults filled in, plus where its folder is. */
 export interface Bot {
   slug: string; workspaceRoot: string; name: string; label: string; shape: string; color: string;
-  section: string | null; pinned: boolean; hidden: boolean; primary: boolean; notifications: boolean;
+  section: string | null; pinned: boolean; hidden: boolean; primary: boolean; creator: boolean; notifications: boolean;
   projectId: string | null; mainThreadId: string | null; createdAt: string; updatedAt?: string;
   /** Made from an existing T3 project: it lives in that project's folder, with its own things in `.bot/`. */
   adopted: boolean;
@@ -41,7 +41,15 @@ async function writeJson(file: string, value: unknown) {
 }
 
 /** One writer owns the selection and its compatibility flags, including provisioning writes. */
-export function createMainBotRegistry({ botsRoot, onBotChanged = async () => {} }: { botsRoot: string; onBotChanged?: (bot: Bot) => Promise<unknown> }) {
+export function createMainBotRegistry({
+  botsRoot,
+  onBotChanged = async () => {},
+  archivedProjects = async () => new Set<string>(),
+}: {
+  botsRoot: string;
+  onBotChanged?: (bot: Bot) => Promise<unknown>;
+  archivedProjects?: () => Promise<ReadonlySet<string>>;
+}) {
   const selectionFile = path.join(botsRoot, ".botapp", "main-bot.json");
   let pending: Promise<unknown> = Promise.resolve();
   const metadataCache = createJsonCache();
@@ -74,6 +82,7 @@ export function createMainBotRegistry({ botsRoot, onBotChanged = async () => {} 
         label: "", shape: "sphere", color: "teal", section: null, pinned: false,
         hidden: false, primary: false, notifications: true, projectId: null, mainThreadId: null,
         ...meta, name: typeof meta.name === "string" && meta.name.trim() ? meta.name : slug,
+        creator: meta.creator === true,
         createdAt, slug, workspaceRoot, adopted: Boolean(entry), environmentId: entry?.environmentId ?? "local",
         dataDir: entry ? path.join(workspaceRoot, ADOPTED_DATA) : workspaceRoot,
       });
@@ -90,7 +99,7 @@ export function createMainBotRegistry({ botsRoot, onBotChanged = async () => {} 
     await writeJson(metadataFile(bot.slug), withoutDerived(bot));
   }
 
-  async function reconcile() {
+  async function reconcile(preferredCreator?: string) {
     const bots = await loadBots();
     const selection = await readJson(selectionFile, null);
     // A persisted choice outranks every legacy/self-written primary flag.
@@ -101,10 +110,17 @@ export function createMainBotRegistry({ botsRoot, onBotChanged = async () => {} 
     if (selection === null || selection.slug !== (main?.slug ?? null)) {
       await writeJson(selectionFile, { slug: main?.slug ?? null });
     }
+    const candidates = bots.filter((bot) => bot.creator && !bot.hidden && bot.slug !== main?.slug);
+    const archived = candidates.some((bot) => bot.projectId) ? await archivedProjects() : null;
+    const eligible = candidates.filter((bot) => !bot.projectId || !archived?.has(bot.projectId));
+    const creator = eligible.find((bot) => bot.slug === preferredCreator)
+      ?? eligible.sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt))[0];
     for (const bot of bots) {
       const primary = bot.slug === main?.slug;
-      if (bot.primary !== primary || (primary && bot.hidden)) {
+      const isCreator = bot.slug === creator?.slug;
+      if (bot.primary !== primary || bot.creator !== isCreator || (primary && bot.hidden)) {
         bot.primary = primary;
+        bot.creator = isCreator;
         if (primary) bot.hidden = false;
         await persistMetadata(bot);
         await onBotChanged(bot);
@@ -143,6 +159,10 @@ export function createMainBotRegistry({ botsRoot, onBotChanged = async () => {} 
       const current = bots.find((bot) => bot.slug === slug);
       if (!current && !create) throw failure("Bot not found", 404);
       if ("primary" in patch && typeof patch.primary !== "boolean") throw failure("primary must be a boolean", 400);
+      if ("creator" in patch && typeof patch.creator !== "boolean") throw failure("creator must be a boolean", 400);
+      if (patch.creator === true && (current?.primary || patch.primary === true)) {
+        throw failure("The Main Bot cannot be the Bot Creator.");
+      }
       if ("hidden" in patch && typeof patch.hidden !== "boolean") throw failure("hidden must be a boolean", 400);
       if (current?.primary && (patch.hidden === true || patch.primary === false)) {
         throw failure("Choose another main Bot first.");
@@ -151,7 +171,7 @@ export function createMainBotRegistry({ botsRoot, onBotChanged = async () => {} 
       const next = { ...current, ...clean, slug, primary: current?.primary ?? false, updatedAt: new Date().toISOString() };
       if (requestedMain === true) next.hidden = false;
       await persistMetadata(next);
-      const updated = requestedMain === true ? await choose(slug) : await reconcile();
+      const updated = requestedMain === true ? await choose(slug) : await reconcile(patch.creator === true ? slug : undefined);
       // Just written, so the reload has it.
       const saved = updated.find((bot) => bot.slug === slug)!;
       await onBotChanged(saved);
@@ -167,6 +187,7 @@ export function createMainBotRegistry({ botsRoot, onBotChanged = async () => {} 
       if (current.primary && bots.length > 1) throw failure("Choose another main Bot before deleting this Bot.");
       const trash = path.join(botsRoot, ".botapp", "trash");
       await fs.mkdir(trash, { recursive: true });
+      if (current.creator) await persistMetadata({ ...current, creator: false });
       metadataCache.clear();
       await fs.rename(directory(slug), path.join(trash, `${slug}-${Date.now()}`));
       return reconcile();
@@ -182,6 +203,7 @@ export function createMainBotRegistry({ botsRoot, onBotChanged = async () => {} 
       if (!current) throw failure("Bot not found", 404);
       if (!current.adopted) throw failure("Only a Bot made from a project can be turned back into one.");
       if (current.primary && bots.length > 1) throw failure("Choose another main Bot first.");
+      if (current.creator) await persistMetadata({ ...current, creator: false });
       metadataCache.clear();
       await undo(current);
       return reconcile();

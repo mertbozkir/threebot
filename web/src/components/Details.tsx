@@ -5,6 +5,7 @@ import { ModelLabel, ModelPicker, modelDisplayName } from "./ModelPicker";
 import { CodingWorkRows } from "./MachinesPane";
 import { t3 } from "../lib/t3";
 import { Avatar } from "./Avatar";
+import { botRole } from "../lib/botRoles";
 import { Library } from "./Library";
 import { MemoryTab } from "./Memory";
 import { InstructionsTab } from "./Instructions";
@@ -90,6 +91,8 @@ export function Details({ bot, threadId }: { bot: Bot; threadId: string | null }
     setEditing(null);
   };
 
+  const role = !archived && threadId === bot.mainThreadId ? botRole(bot) : null;
+
   return (
     <aside className={clsx("bot-details flex h-full shrink-0 flex-col border-l border-line bg-details", (showRoutines || openRoutine) && "routine-page")} style={{ width }} aria-label="Conversation details">
       <div className="details-header flex h-[52px] shrink-0 items-center justify-end px-3">
@@ -103,7 +106,7 @@ export function Details({ bot, threadId }: { bot: Bot; threadId: string | null }
         <div className="details-content scroll-thin min-h-0 flex-1 overflow-y-auto px-4 pb-6">
           <div className={clsx("details-profile flex flex-col items-center pt-1 pb-4", (tab !== "details" || showRoutines) && "details-profile-mobile-hidden")}>
             <button disabled={archived || threadId !== bot.mainThreadId} onClick={() => setPicker(true)} title="Change avatar" className="rounded-full transition-transform enabled:hover:scale-105">
-              <Avatar shape={identity.shape} color={identity.color} picture={identity.avatarImage} size={88} star={bot.primary && threadId === bot.mainThreadId} />
+              <Avatar shape={identity.shape} color={identity.color} picture={identity.avatarImage} size={88} role={role} />
             </button>
             {editing === "name" ? (
               <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === "Enter" && commit()} className="mt-3 w-full bg-transparent text-center text-[18px] font-medium outline-none" />
@@ -112,6 +115,7 @@ export function Details({ bot, threadId }: { bot: Bot; threadId: string | null }
                 {identity.name}
               </button>
             )}
+            {role && <span className="mt-1 rounded-full bg-pill-soft px-2 py-0.5 text-[11px] text-muted">{role}</span>}
             {threadId && threads[threadId] && <p className="mt-1 text-[12px] text-muted">{subagentStatus(botThreadStatus(bot, threadId))}{!mainSettledByBeta && threads[threadId]?.settledOverride === "settled" ? " · Settled" : ""}</p>}
             {editing === "label" ? (
               <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === "Enter" && commit()} placeholder="Add a label" className="mt-1 w-full bg-transparent text-center text-[13px] text-muted outline-none" />

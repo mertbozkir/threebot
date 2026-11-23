@@ -1,5 +1,6 @@
 import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Avatar } from "./components/Avatar";
+import { BotMap } from "./components/BotMap";
 import { Chat } from "./components/Chat";
 import { UsageStatsPrompt } from "./components/UsageStats";
 import { Sidebar } from "./components/Sidebar";
@@ -9,6 +10,7 @@ import { ColumnDivider } from "./components/ColumnDivider";
 import { Modal, Pill, Spinner } from "./components/ui";
 import { boot, botStatus, machineOf, openDialog, select, setDetailsOpen, setMainBot, setSidebarCompact, updateBot, useApp, useProjectsOn, type MainBotIntent } from "./store";
 import { api } from "./lib/api";
+import { comparePinnedBots, isPinnedBot } from "./lib/botRoles";
 import { MOBILE_LAYOUT_QUERY } from "./lib/layout";
 import { navigationFor, navigationUrl, readNavigation, restoreNavigation } from "./lib/navigation";
 import { runBackGuard } from "./lib/backGuard";
@@ -58,8 +60,8 @@ function useShortcuts() {
       else if (e.key === "b") { e.preventDefault(); if (e.altKey) setDetailsOpen(!useApp.getState().detailsOpen); else setSidebarCompact(!useApp.getState().sidebarCompact); }
       else if (/^[1-9]$/.test(e.key)) {
         const bots = Object.values(useApp.getState().bots).filter((b) => !b.hidden);
-        const pinned = bots.filter((b) => b.primary || b.pinned).sort((a, b) => Number(b.primary) - Number(a.primary) || a.createdAt.localeCompare(b.createdAt));
-        const ordered = [...pinned, ...bots.filter((b) => !b.primary && !b.pinned)];
+        const pinned = bots.filter(isPinnedBot).sort(comparePinnedBots);
+        const ordered = [...pinned, ...bots.filter((bot) => !isPinnedBot(bot))];
         const b = ordered[Number(e.key) - 1];
         if (b) { e.preventDefault(); select(b.slug); }
       }
@@ -161,6 +163,8 @@ function Shell() {
       <main className={narrow ? bot || page ? "flex min-w-0 flex-1 overflow-hidden" : "hidden" : "flex min-w-0 flex-1 overflow-hidden rounded-tl-[14px] border-t border-l border-line"}>
         {page === "projects" ? (
           <ErrorBoundary key="projects"><Suspense fallback={null}><ProjectsPage narrow={narrow} onBack={narrow ? () => history.back() : undefined} /></Suspense></ErrorBoundary>
+        ) : page === "map" ? (
+          <BotMap narrow={narrow} onBack={narrow ? () => history.back() : () => useApp.setState({ page: null })} />
         ) : page === "room" && selectedRoom ? (
           <ErrorBoundary key={`room:${selectedRoom}`}><Suspense fallback={null}><RoomView roomId={selectedRoom} onBack={narrow ? () => history.back() : undefined} /></Suspense></ErrorBoundary>
         ) : bot ? (

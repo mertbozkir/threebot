@@ -3,7 +3,7 @@ import { ChevronRight, FolderGit2, Pencil } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { AvatarEditorDialog, AvatarPicker, type AvatarDraft } from "./AvatarEditor";
 import { Modal, Pill, Spinner } from "./ui";
-import { createBot, defaultModel, deleteBot, openDialog, releaseBot, toast, updateBot, useApp } from "../store";
+import { createBot, defaultModel, deleteBot, ensureBotSection, openDialog, releaseBot, toast, updateBot, useApp } from "../store";
 import { DEFAULT_AVATAR } from "../lib/character";
 import { sharedObjects } from "../lib/objectAvatars";
 import type { Bot } from "../lib/types";
@@ -12,10 +12,15 @@ import { composeBotInstructions, BOT_INSTRUCTIONS_MAX } from "../lib/botInstruct
 
 export { AvatarPicker } from "./AvatarEditor";
 
+const SECTION_PREFIX = "section:";
+
 export function NewBotDialog() {
   const bots = useApp((s) => s.bots);
+  const sections = useApp((s) => s.settings?.sections);
   const first = Object.keys(bots).length === 0;
   const [name, setName] = useState(first ? "Threebot" : "");
+  const [sectionChoice, setSectionChoice] = useState("");
+  const [sectionName, setSectionName] = useState("");
   const [label, setLabel] = useState("");
   const [does, setDoes] = useState("");
   const [doesNot, setDoesNot] = useState("");
@@ -26,13 +31,16 @@ export function NewBotDialog() {
   const close = () => openDialog(null);
   const instructions = composeBotInstructions({ does, doesNot, style });
   const tooLong = instructions.length > BOT_INSTRUCTIONS_MAX;
+  const newSection = sectionChoice === "new";
+  const canCreate = name.trim() && (!newSection || sectionName.trim()) && !busy && !tooLong;
 
   const create = async () => {
-    if (!name.trim() || busy || tooLong) return;
+    if (!canCreate) return;
     setBusy(true);
     try {
+      const section = newSection ? await ensureBotSection(sectionName) : sectionChoice.slice(SECTION_PREFIX.length) || null;
       await createBot({
-        name: name.trim(), label: label.trim(), instructions, ...avatar, model: defaultModel(), primary: first,
+        name: name.trim(), label: label.trim(), section, instructions, ...avatar, model: defaultModel(), primary: first,
       });
       if (first) await updateBot(Object.values(useApp.getState().bots)[0].slug, { pinned: true });
       close();
@@ -55,6 +63,20 @@ export function NewBotDialog() {
             placeholder="Name your Bot"
             className="new-bot-name mt-4 h-10 w-full rounded-xl border border-line bg-transparent text-center text-[14px] outline-none placeholder:text-faint focus:border-line-strong"
           />
+          <select aria-label="Section" value={sectionChoice} disabled={busy} onChange={(e) => setSectionChoice(e.target.value)} className="new-bot-section mt-2 h-9 w-full rounded-xl border border-line bg-elevated px-3 text-[13px] outline-none focus:border-line-strong">
+            <option value="">Unassigned</option>
+            {sections?.map((section) => <option key={section} value={SECTION_PREFIX + section}>{section}</option>)}
+            <option value="new">New section…</option>
+          </select>
+          {newSection && <input
+            aria-label="Section name"
+            placeholder="Section name"
+            value={sectionName}
+            disabled={busy}
+            onChange={(e) => setSectionName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && create()}
+            className="mt-2 h-9 w-full rounded-xl border border-line bg-transparent px-3 text-[13px] outline-none placeholder:text-faint focus:border-line-strong"
+          />}
           <input
             aria-label="What is this Bot for?"
             value={label}
@@ -90,7 +112,7 @@ export function NewBotDialog() {
         <AvatarPicker shape={avatar.shape} color={avatar.color} disabled={busy} onChange={(shape, color) => setAvatar({ shape, color, avatarImage: null, avatarDefinition: shape === avatar.shape ? avatar.avatarDefinition : null })} />
       </div>
       <div className="dialog-footer flex items-center gap-2 border-t border-line px-3 py-3">
-        <Pill onClick={create} disabled={!name.trim() || busy || tooLong}>
+        <Pill onClick={create} disabled={!canCreate}>
           {busy && <Spinner />} Create
         </Pill>
         <button type="button" disabled={busy} onClick={() => openDialog("adopt-project")} className="new-bot-from-project ml-auto flex h-9 items-center gap-2 rounded-full px-3 text-[13px] text-muted hover:bg-hover hover:text-fg">

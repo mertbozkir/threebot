@@ -80,6 +80,11 @@ test('gateway main-Bot endpoints persist replacement and reject unsafe hides/del
     assert.equal((await request('/api/main-bot', 'PUT', { slug: 'missing' })).status, 404);
     assert.equal((await request('/api/main-bot', 'PUT', null)).status, 400);
 
+    assert.equal((await request('/api/bots/alpha', 'PUT', { creator: true })).body.creator, true);
+    assert.equal((await request('/api/bots/beta', 'PUT', { creator: true })).status, 409);
+    assert.equal((await request('/api/bots/alpha', 'GET')).body.creator, true);
+    assert.equal((await request('/api/bots/alpha', 'PUT', { creator: false })).body.creator, false);
+
     // Instructions: the owner's part is editable; the managed block is left alone.
     const agents = path.join(botsRoot, 'alpha', 'AGENTS.md');
     await writeFile(agents, '<!-- bot:managed:start -->\n# You are Alpha\n\nManaged text.\n<!-- bot:managed:end -->\n\n## Mine\n- Review code.\n');

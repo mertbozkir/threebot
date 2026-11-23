@@ -59,7 +59,10 @@ export type RemoteRead = {
 /** The Bots' shared computer (Settings › Beta › Computer). */
 export type DesktopStatus = { state: "off" | "unavailable" | "building" | "stopped" | "starting" | "healthy" | "stopping" | "failed"; reason: string | null; screens: number; display: number | null; controlled: boolean; helpRequest: { instruction: string; at: string } | null; activity: { busy: boolean; last: { type: string; x: number; y: number; at: string } | null } };
 
+export type BotMapEdge = { from: string; to: string; count: number };
+
 export const api = {
+  botMap: (signal?: AbortSignal) => req<{ edges: BotMapEdge[] }>("/api/bot-map", { signal }),
   desktop: (slug: string) => req<DesktopStatus>(`/api/desktop/${encodeURIComponent(slug)}`),
   wakeDesktop: (slug: string) => req<DesktopStatus>(`/api/desktop/${encodeURIComponent(slug)}/wake`, { method: "POST", body: "{}" }),
   typeDesktop: (slug: string, text: string) => req<{ ok: true }>(`/api/desktop/${encodeURIComponent(slug)}/type`, { method: "POST", body: JSON.stringify({ text }) }),
