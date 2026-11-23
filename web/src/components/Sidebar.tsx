@@ -216,7 +216,6 @@ export function Sidebar({ wide = false }: { wide?: boolean }) {
       <RoundButton ref={sidebarToggleRef} className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" onClick={() => setSidebarCompact(false)} title="Expand sidebar (⌘B)" aria-label="Expand sidebar" aria-keyshortcuts="Meta+B"><PanelLeftOpen size={16} /></RoundButton>
     </div>
     <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-4">
-      <MapRow large={false} compact current={page === "map"} />
       {[pinned, ...groups.map((g) => g.bots)].filter((group) => group.length).map((group, index) => <div key={index} className="flex flex-col items-center gap-2 border-b border-line py-3 last:border-0">{group.map((bot) => {
         const status = botStatus(bot);
         const role = botRole(bot);
@@ -246,9 +245,9 @@ export function Sidebar({ wide = false }: { wide?: boolean }) {
       {wide && attention && <button className="mobile-attention pop-in" aria-label={`Jump to the chat needing attention ${attention}`} onClick={jumpToAttention}>Needs attention{attention === "above" ? <ChevronUp size={18} aria-hidden="true" /> : <ChevronDown size={18} aria-hidden="true" />}</button>}
 
       <div ref={list} onScroll={wide ? measureAttention : undefined} className="bot-list scroll-thin min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        <div className="mb-1 flex items-center gap-1">
-          {projectsOn && <ProjectsRow large={wide} current={page === "projects"} />}
-          <MapRow large={wide} compact={projectsOn} current={page === "map"} />
+        <div className={clsx("mb-1 grid gap-1", projectsOn && "grid-cols-2")}>
+          {projectsOn && <ProjectsRow large={wide} current={page === "projects"} short />}
+          <MapRow large={wide} current={page === "map"} />
         </div>
         {pinned.length > 0 && (
           <div className="pinned-bots flex flex-wrap gap-1 px-1 pt-1 pb-3">
@@ -333,29 +332,26 @@ export function Sidebar({ wide = false }: { wide?: boolean }) {
 }
 
 /** The way to the Projects page, with the count of open to-dos once the board has loaded. */
-function ProjectsRow({ large, current }: { large: boolean; current: boolean }) {
+function ProjectsRow({ large, current, short = false }: { large: boolean; current: boolean; short?: boolean }) {
   // Following the board here keeps the count live while the app is open.
   useEffect(() => followBoard(), []);
   const open = useBoard((s) => (s.status === "ready" ? Object.values(s.items).filter(isOpenTask).length : null));
   return (
     <button onClick={() => openProjects()} aria-current={current ? "page" : undefined} className={clsx("projects-nav flex w-full min-w-0 items-center gap-3 rounded-[10px] px-2 text-left transition-colors", large ? "py-[9px]" : "py-[7px]", current ? "bg-active" : "hover:bg-hover")}>
       <span className={clsx("grid shrink-0 place-items-center rounded-[12px] border border-line text-muted", large ? "size-11" : "size-9")}><FolderKanban size={large ? 20 : 17} /></span>
-      <span className="min-w-0 flex-1"><span className="block truncate text-[13.5px] leading-5">Projects</span><span className="block truncate text-[12.5px] leading-[18px] text-muted">{open === null ? "To-dos, machines, what's running" : open ? `${open} open to-do${open === 1 ? "" : "s"}` : "Nothing open"}</span></span>
+      <span className="min-w-0 flex-1"><span className="block truncate text-[13.5px] leading-5">Projects</span><span className="block truncate text-[12.5px] leading-[18px] text-muted">{open === null ? short ? "To-dos" : "To-dos, machines, what's running" : open ? `${open}${short ? "" : " open"} to-do${open === 1 ? "" : "s"}` : "Nothing open"}</span></span>
     </button>
   );
 }
 
-function MapRow({ large, compact, current }: { large: boolean; compact: boolean; current: boolean }) {
-  const icon = <MapIcon size={large ? 20 : 17} aria-hidden="true" />;
-  return <button type="button" onClick={openBotMap} aria-label="Bot Map" title="Bot Map" aria-current={current ? "page" : undefined}
-    className={clsx("rounded-[10px] transition-colors", current ? "bg-active" : "hover:bg-hover",
-      compact ? clsx("flex shrink-0 items-center gap-1.5 px-2.5 text-[13px] text-muted", large ? "h-11" : "h-9")
-        : clsx("flex w-full items-center gap-3 px-2 text-left", large ? "py-[9px]" : "py-[7px]"))}>
-    {compact ? <><span>Bot Map</span>{icon}</> : <>
-      <span className={clsx("grid shrink-0 place-items-center rounded-[12px] border border-line text-muted", large ? "size-11" : "size-9")}>{icon}</span>
-      <span className="text-[13.5px]">Bot Map</span>
-    </>}
-  </button>;
+function MapRow({ large, current }: { large: boolean; current: boolean }) {
+  const count = useApp((s) => Object.values(s.bots).filter((bot) => !bot.hidden).length);
+  return (
+    <button type="button" onClick={openBotMap} aria-current={current ? "page" : undefined} className={clsx("projects-nav flex w-full min-w-0 items-center gap-3 rounded-[10px] px-2 text-left transition-colors", large ? "py-[9px]" : "py-[7px]", current ? "bg-active" : "hover:bg-hover")}>
+      <span className={clsx("grid shrink-0 place-items-center rounded-[12px] border border-line text-muted", large ? "size-11" : "size-9")}><MapIcon size={large ? 20 : 17} aria-hidden="true" /></span>
+      <span className="min-w-0 flex-1"><span className="block truncate text-[13.5px] leading-5">Bot Map</span><span className="block truncate text-[12.5px] leading-[18px] text-muted">{count} Bot{count === 1 ? "" : "s"}</span></span>
+    </button>
+  );
 }
 
 function Dot({ status, className }: { status: BotStatus; className?: string }) {
