@@ -24,6 +24,7 @@ export function BotMap({ narrow, onBack }: { narrow: boolean; onBack: () => void
   const projects = useApp((s) => s.projects);
   const sections = useApp((s) => s.settings?.sections);
   const [edges, setEdges] = useState<BotMapEdge[]>([]);
+  const [unread, setUnread] = useState<string[]>([]);
   const [hovered, setHovered] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [positions, setPositions] = useState<Map<string, Point>>(() => new Map());
@@ -31,13 +32,24 @@ export function BotMap({ narrow, onBack }: { narrow: boolean; onBack: () => void
 
   useEffect(() => {
     const controller = new AbortController();
-    void api.botMap(controller.signal).then(({ edges }) => {
-      if (!controller.signal.aborted) setEdges(edges ?? []);
-    }).catch(() => {});
-    return () => controller.abort();
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      let delay = 5_000;
+      try {
+        const result = await api.botMap(controller.signal);
+        if (controller.signal.aborted) return;
+        setEdges(result.edges);
+        setUnread(result.unread ?? []);
+        if (!result.unread?.length) delay = 60_000;
+      } catch {}
+      if (!controller.signal.aborted) timer = setTimeout(poll, delay);
+    };
+    void poll();
+    return () => { controller.abort(); clearTimeout(timer); };
   }, []);
 
   const visible = Object.values(roster).filter((bot) => !bot.hidden && !archivedInT3(bot, projects));
+  const unreadCount = visible.filter((bot) => unread.includes(bot.slug)).length;
   const leads = visible.filter((bot) => botRole(bot)).sort(comparePinnedBots);
   const others = visible.filter((bot) => !leads.includes(bot)).sort((a, b) => a.name.localeCompare(b.name));
   const groups = new Map<string | null, Bot[]>((sections ?? []).map((name) => [name, []]));
@@ -111,8 +123,11 @@ export function BotMap({ narrow, onBack }: { narrow: boolean; onBack: () => void
     </header>
     <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-4 py-5">
       <p className="mx-auto mb-5 max-w-[1200px] text-sm text-muted">
-        {visible.length ? "Hover or tap a Bot to see its recent message connections." : "No Bots to show."}
+        {visible.length ? "Hover or tap a Bot to see its message connections." : "No Bots to show."}
       </p>
+      {unreadCount > 0 && <p role="status" className="mx-auto mb-5 max-w-[1200px] text-sm text-muted">
+        Still counting messages for {unreadCount} {unreadCount === 1 ? "Bot" : "Bots"}.
+      </p>}
       <div ref={stage} className="relative mx-auto max-w-[1200px]">
         {active && connections.length > 0 && <svg aria-hidden="true" className="pointer-events-none absolute inset-0 z-[1] size-full overflow-visible"
           fill="none" stroke={botColor(active.color)} strokeOpacity={0.8} strokeLinecap="round">

@@ -144,6 +144,7 @@ export function createMainBotRegistry({
   }
 
   return {
+    roster: () => exclusive(loadBots),
     list: () => exclusive(reconcile),
     refreshInstructions: () => exclusive(async () => {
       for (const bot of await reconcile()) await onBotChanged(bot);
