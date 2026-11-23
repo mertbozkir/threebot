@@ -592,6 +592,9 @@ function botDir(slug: string) {
 }
 const mainBots = createMainBotRegistry({
   botsRoot: cfg.botsRoot,
+  archivedProjects: async () => new Set(
+    (await t3Projects(2_000).catch(() => [])).filter((project) => project.archivedAt).map((project) => project.id),
+  ),
   onBotChanged: async (bot) => {
     await writeAgentsMd(bot, await getSettings()).catch((error) => console.error("refreshing Bot instructions failed", error));
   },
@@ -870,9 +873,9 @@ async function freeSlug(name: string) {
 // ---------- Bots made from existing projects ----------
 /** A T3 project as /api/projects lists it; only the fields used here. */
 type T3ProjectRow = { id: string; title?: string; workspaceRoot?: string; deletedAt?: string | null; archivedAt?: string | null };
-async function t3Projects(): Promise<T3ProjectRow[]> {
-  const client = await withTimeout(t3rpc(), 10000, "T3 timed out");
-  const { projects } = await withTimeout(client.http("/api/projects"), 15000, "T3 timed out");
+async function t3Projects(timeout = 15_000): Promise<T3ProjectRow[]> {
+  const client = new T3Client({ baseUrl: cfg.t3Url, token });
+  const { projects } = await client.http("/api/projects", { signal: AbortSignal.timeout(timeout) });
   return (projects ?? []).filter((project: T3ProjectRow) => project.id && project.workspaceRoot && !project.deletedAt);
 }
 /** This machine's T3 projects that could become Bots: not already a Bot, and not inside the Bots folder. */

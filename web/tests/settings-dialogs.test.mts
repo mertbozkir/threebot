@@ -33,6 +33,7 @@ const bundle = await buildOnce({
       export { createElement, act, useState } from "react";
       export { createRoot } from "react-dom/client";
       export { SkillsDialog } from ${JSON.stringify(`${src}components/SkillsDialog.tsx`)};
+      export { Sidebar } from ${JSON.stringify(`${src}components/Sidebar.tsx`)};
       export { t3 } from ${JSON.stringify(`${src}lib/t3.ts`)};
       export { parseVaultCsv, parseCsv } from ${JSON.stringify(`${src}lib/vaultCsv.ts`)};
       export { SettingsDialog } from ${JSON.stringify(`${src}components/SettingsDialog.tsx`)};
@@ -51,7 +52,7 @@ assert.ok(entry);
 const testDir = await mkdtemp(join(tmpdir(), "bot-settings-tests-"));
 const testEntry = join(testDir, "components.mjs");
 await writeFile(testEntry, entry.code);
-const { parseVaultCsv, parseCsv, createElement: h, act, useState, createRoot, SettingsDialog, SkillsDialog, t3, AvatarPicker, NewBotDialog, RenameBotDialog, AvatarEditorDialog, AvatarDialog, Modal, useApp, createCharacter, AvatarPlayer } = await import(pathToFileURL(testEntry).href);
+const { parseVaultCsv, parseCsv, createElement: h, act, useState, createRoot, SettingsDialog, SkillsDialog, t3, AvatarPicker, NewBotDialog, RenameBotDialog, AvatarEditorDialog, AvatarDialog, Modal, useApp, createCharacter, AvatarPlayer, Sidebar } = await import(pathToFileURL(testEntry).href);
 after(async () => { for (const channel of channels) { channel.port1.close(); channel.port2.close(); } await window.happyDOM.close(); await rm(testDir, { recursive: true }); });
 let root, host, requests, settings, handleRequest;
 beforeEach(() => {
@@ -770,4 +771,68 @@ test("Bot CSV import retains ordered repeatable fields and skips malformed array
   assert.deepEqual(contacts.items[0].emails,["first@example.invalid","second@example.invalid"]);
   assert.deepEqual(contacts.items[0].phones,["111","222"]);
   assert.equal(parseVaultCsv('name,url,username,password,websites\nSample,https://first.invalid,user,synthetic,broken\n').skipped,1);
+});
+
+test("New Bot saves chosen and new sections, and the sidebar menu toggles Bot Creator", async (t) => {
+  const bot = (slug: string, name: string, extra = {}) => ({
+    slug, name, shape: "sphere", color: "teal", createdAt: "2026-01-01", mainThreadId: null, ...extra,
+  });
+  const alpha = bot("alpha", "Alpha", { primary: true, section: "Work" });
+  const beta = bot("beta", "Beta");
+  const gamma = bot("gamma", "Gamma", { pinned: true, createdAt: "2025-01-01" });
+  let bots = [alpha, beta, gamma];
+  settings = { ...settings, sections: ["Work"] };
+  useApp.setState({ bots: { alpha, beta, gamma }, settings, sidebarCompact: false });
+  t.mock.method(t3, "dispatch", async () => ({}));
+  const handleSettings = handleRequest;
+  handleRequest = async (url, init) => {
+    if (url === "/api/bots" && init.method === "POST") {
+      const body = JSON.parse(init.body);
+      const created = { ...bot(body.name.toLowerCase(), body.name, body), mainThreadId: "thread-" + body.name };
+      bots = [...bots, created];
+      return Response.json(created);
+    }
+    if (url === "/api/bots") return Response.json({ bots });
+    if (url === "/api/bots/beta" && init.method === "PUT") {
+      const updated = { ...beta, ...JSON.parse(init.body) };
+      bots = bots.map((entry) => entry.slug === "beta" ? updated : entry);
+      return Response.json(updated);
+    }
+    return handleSettings(url, init);
+  };
+
+  for (const [name, choice, newName] of [["Existing", "Work", ""], ["New", "New section…", " Research "], ["Reuse", "New section…", "research"]]) {
+    await render(h(NewBotDialog, { key: name }));
+    await input(labeled("Name your Bot"), name);
+    const picker = labeled<HTMLSelectElement>("Section");
+    assert.ok(picker);
+    assert.equal(picker.selectedOptions[0].textContent, "Unassigned");
+    assert.equal(picker.options[1].textContent, "Work · Main Bot");
+    const option = Array.from(picker.options).find((option) => option.textContent?.startsWith(choice));
+    assert.ok(option, choice);
+    await select("Section", option.value);
+    if (newName) await input(labeled("Section name"), newName);
+    await click(button("Create"));
+  }
+
+  assert.deepEqual(requests.filter(({ method }) => method === "PUT" || method === "POST").map(({ url, body }) => {
+    const payload = JSON.parse(body);
+    return [url, payload.sections ?? payload.section];
+  }), [
+    ["/api/bots", "Work"],
+    ["/api/settings", ["Work", "Research"]],
+    ["/api/bots", "Research"],
+    ["/api/bots", "Research"],
+  ]);
+
+  await render(h(Sidebar));
+  await click(labeled("Options for Alpha"));
+  assert.equal(button("Make Bot Creator")?.disabled, true);
+  await click(labeled("Options for Beta"));
+  await click(button("Make Bot Creator"));
+  assert.deepEqual(Array.from(document.querySelectorAll(".pinned-bot .pinned-name"), (label) => label.textContent), ["AlphaMain Bot", "BetaBot Creator", "Gamma"]);
+  await click(labeled("Options for Beta"));
+  await click(button("Remove Bot Creator"));
+  assert.equal(host.querySelectorAll(".pinned-bot").length, 2);
+  assert.deepEqual(requests.filter(({ url }) => url === "/api/bots/beta").map(({ body }) => JSON.parse(body)), [{ creator: true }, { creator: false }]);
 });

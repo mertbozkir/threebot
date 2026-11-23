@@ -1,5 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 import clsx from "clsx";
+import { WandSparkles } from "lucide-react";
+import type { BotRole } from "../lib/botRoles";
 import { AvatarPlayer } from "./avatarPlayer";
 import { ObjectAvatar } from "./ObjectAvatar";
 import { isObjectShape, objectDefinition, safeDefinition } from "../lib/objectAvatars";
@@ -14,7 +16,7 @@ export function Avatar({
   color = "teal",
   size = 32,
   state = "idle",
-  star = false,
+  role,
   className,
   picture,
   definition,
@@ -24,7 +26,7 @@ export function Avatar({
   color?: string;
   size?: number;
   state?: AvatarState;
-  star?: boolean;
+  role?: BotRole | null;
   className?: string;
   picture?: string | null;
   /** A look that isn't saved on a Bot yet, such as an import being previewed. */
@@ -57,12 +59,15 @@ export function Avatar({
   return (
     <span className={clsx("relative inline-block shrink-0", className)} style={{ width: size, height: size }} data-avatar-state={state}>
       {picture ? <img src={picture} width={size} height={size} alt="" className="size-full rounded-full object-cover" /> : object ? <ObjectAvatar key={object.id} definition={object} color={color} size={size} state={state} still={still} /> : <svg ref={svg} width={size} height={size} className="overflow-visible" aria-hidden="true" />}
-      {star && (
+      {role && (
         <span
+          role="img"
+          title={role}
+          aria-label={role}
           className="absolute -right-0.5 -bottom-0.5 grid place-items-center rounded-full bg-pill text-pill-fg ring-2 ring-[var(--bg-sidebar)]"
           style={{ width: Math.max(12, size * 0.32), height: Math.max(12, size * 0.32), fontSize: Math.max(7, size * 0.2) }}
         >
-          ★
+          {role === "Main Bot" ? "★" : <WandSparkles aria-hidden="true" size={Math.max(9, size * 0.2)} />}
         </span>
       )}
     </span>

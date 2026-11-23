@@ -14,6 +14,7 @@ export type Bot = {
   pinned: boolean;
   hidden: boolean;
   primary: boolean;
+  creator?: boolean;
   notifications: boolean;
   projectId: string | null;
   mainThreadId: string | null;

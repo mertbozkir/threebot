@@ -1526,7 +1526,7 @@ export function deleteBot(slug: string) {
     keepBoot({ botsRoot: get().botsRoot, executorUrl: get().executorUrl, settings: get().settings, bots, historical: Object.values(get().historicalBots) });
     forgetThreadCopy(Object.values(get().threads).filter((thread) => thread.id === bot.mainThreadId || (bot.projectId && thread.projectId === bot.projectId)).map((thread) => thread.id).concat(bot.mainThreadId ? [bot.mainThreadId] : []));
     set((s) => ({ selected: s.selected === slug ? null : s.selected, selectedThreadId: s.selected === slug ? null : s.selectedThreadId, exchangeBotSlug: s.exchangeBotSlug === slug ? null : s.exchangeBotSlug }));
-    if (bot.mainThreadId) set((s) => ({ historicalBots: { ...s.historicalBots, [`archived:${bot.mainThreadId}`]: { ...bot, hidden: true, pinned: false, primary: false, notifications: false } } }));
+    if (bot.mainThreadId) set((s) => ({ historicalBots: { ...s.historicalBots, [`archived:${bot.mainThreadId}`]: { ...bot, hidden: true, pinned: false, primary: false, creator: false, notifications: false } } }));
     if (bot.mainThreadId) await t3.dispatch({ type: "thread.stop", threadId: bot.mainThreadId }).catch(() => {});
     if (bot.projectId) await t3.call("projects.mutate", { type: "project.delete", commandId: uuid(), projectId: bot.projectId, force: true }).catch((e) => console.warn(e));
   });
@@ -1628,10 +1628,25 @@ export async function answerSecret(threadId: string, turnItemId: string, secret:
 }
 
 let settingsSaves: Promise<unknown> = Promise.resolve();
-export function saveSettings(patch: Partial<Settings>) {
-  const result = settingsSaves.then(() => persistSettings(patch));
+function queueSettingsSave<T>(operation: () => Promise<T>) {
+  const result = settingsSaves.then(operation);
   settingsSaves = result.catch(() => {});
   return result;
+}
+
+export function saveSettings(patch: Partial<Settings>) {
+  return queueSettingsSave(() => persistSettings(patch));
+}
+
+export function ensureBotSection(name: string) {
+  return queueSettingsSave(async () => {
+    const section = name.trim();
+    const sections = get().settings?.sections ?? [];
+    const existing = sections.find((entry) => entry.toLowerCase() === section.toLowerCase());
+    if (existing) return existing;
+    await persistSettings({ sections: [...sections, section] });
+    return section;
+  });
 }
 
 async function persistSettings(patch: Partial<Settings>) {

@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import clsx from "clsx";
-import { Archive, ArrowLeftRight, Bot as BotIcon, FolderKanban, CircleCheck, ArrowUp, ArrowDown, RotateCcw, Check, ChevronDown, ChevronRight, ChevronUp, CloudDownload, Copy, Ellipsis, EyeOff, Eye, Folder, FolderInput, FolderPlus, Gauge, Grid2x2Plus, LayoutGrid, ListChecks, LogOut, MailOpen, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, PinOff, Plus, Search, Send, Settings as SettingsIcon, Smartphone, Star, Trash2, Users } from "lucide-react";
+import { Archive, ArrowLeftRight, Bot as BotIcon, FolderKanban, CircleCheck, ArrowUp, ArrowDown, RotateCcw, Check, ChevronDown, ChevronRight, ChevronUp, CloudDownload, Copy, Ellipsis, EyeOff, Eye, Folder, FolderInput, FolderPlus, Gauge, Grid2x2Plus, LayoutGrid, ListChecks, LogOut, MailOpen, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, PinOff, Plus, Search, Send, Settings as SettingsIcon, Smartphone, Star, Trash2, Users, WandSparkles } from "lucide-react";
 import { ActivityAvatar } from "./ActivityAvatar";
 import { Menu, Modal, Pill, RoundButton, type MenuItem } from "./ui";
 import { useUsagePeak } from "./UsagePanel";
 import { UpdatePopover, useUpdateNotice } from "./RemoteAccess";
-import { archiveThread, archivedInT3, unarchiveBotProject, forgetDeviceCopy, isSettled, setThreadDone, botStatus, mainThread, markThreadRead, markThreadUnread, openDialog, openProjects, saveSettings, select, setSidebarCompact, toast, updateBot, useApp, useProjectsOn, type BotStatus } from "../store";
+import { archiveThread, archivedInT3, unarchiveBotProject, ensureBotSection, forgetDeviceCopy, isSettled, setThreadDone, botStatus, mainThread, markThreadRead, markThreadUnread, openDialog, openProjects, saveSettings, select, setSidebarCompact, toast, updateBot, useApp, useProjectsOn, type BotStatus } from "../store";
 import { followBoard, isOpenTask, useBoard } from "../lib/projects";
 import { copyText } from "../lib/t3";
 import { api, signOutTarget } from "../lib/api";
 import { RoomsCompact, RoomsSection } from "./Rooms";
+import { botRole, comparePinnedBots, isPinnedBot } from "../lib/botRoles";
 import type { Bot, ThreadShell } from "../lib/types";
 
 function preview(bot: Bot, status: BotStatus) {
@@ -63,8 +64,8 @@ export function Sidebar({ wide = false }: { wide?: boolean }) {
     const all = Object.values(bots).sort((a, b) => lastActivity(b).localeCompare(lastActivity(a)));
     const off = (b: Bot) => b.hidden || archivedInT3(b, projects);
     const visible = all.filter((b) => !off(b));
-    const pinned = visible.filter((b) => b.primary || b.pinned).sort((a, b) => Number(b.primary) - Number(a.primary) || (a.createdAt ?? "").localeCompare(b.createdAt ?? ""));
-    const rest = visible.filter((b) => !b.primary && !b.pinned);
+    const pinned = visible.filter(isPinnedBot).sort(comparePinnedBots);
+    const rest = visible.filter((bot) => !isPinnedBot(bot));
     const order = [...(settings?.sections ?? [])];
     for (const b of rest) if (b.section && !order.includes(b.section)) order.push(b.section);
     const groups = order.map((name) => ({ name, bots: rest.filter((b) => b.section === name) }));
@@ -143,8 +144,8 @@ export function Sidebar({ wide = false }: { wide?: boolean }) {
           const name = prompt("Section name")?.trim();
           if (!name) return;
           report((async () => {
-            if (!sections.includes(name)) await saveSettings({ sections: [...sections, name] });
-            await updateBot(bot.slug, { section: name, pinned: false });
+            const section = await ensureBotSection(name);
+            await updateBot(bot.slug, { section, pinned: false });
           })());
         },
       },
@@ -170,21 +171,27 @@ export function Sidebar({ wide = false }: { wide?: boolean }) {
       },
     };
     const t3Archived = archivedInT3(bot, projects);
+    const creatorItem: MenuItem = {
+      label: bot.creator ? "Remove Bot Creator" : "Make Bot Creator",
+      icon: <WandSparkles size={14} />,
+      disabled: bot.primary || bot.hidden || t3Archived,
+      onSelect: () => report(updateBot(bot.slug, { creator: !bot.creator })),
+    };
     const hideItem: MenuItem = bot.hidden || t3Archived
       ? { label: wide ? "Unhide" : "Show in sidebar", icon: <Eye size={14} />, onSelect: () => report((async () => { if (t3Archived) await unarchiveBotProject(bot); if (bot.hidden) await updateBot(bot.slug, { hidden: false }); })()) }
       : { label: wide ? "Hide" : "Hide from sidebar", danger: wide, icon: <EyeOff size={14} />, onSelect: () => bot.primary ? openDialog({ kind: "main-bot", intent: { kind: "hide", slug: bot.slug } }) : report(updateBot(bot.slug, { hidden: true, pinned: false })) };
     const deleteItem: MenuItem = { label: bot.adopted ? "Turn back into a plain project" : "Delete", icon: bot.adopted ? <FolderInput size={14} /> : <Trash2 size={14} />, danger: true, onSelect: () => bot.primary && Object.keys(bots).length > 1 ? openDialog({ kind: "main-bot", intent: { kind: "delete", slug: bot.slug } }) : openDialog({ kind: "delete-bot", slug: bot.slug }) };
     if (wide) {
       const [pinItem, ...moveItems] = organizationItems;
-      const pinned = bot.primary || bot.pinned;
+      const pinned = isPinnedBot(bot);
       const items: MenuItem[] = [
         ...(!pinned ? lifecycleItems(thread) : []),
         unreadItem,
         ...(pinItem ? [pinItem] : []),
-        ...(bot.primary ? [mainBotItem] : []),
+        ...(bot.primary ? [mainBotItem, creatorItem] : []),
         ...(moveItems.length ? [{ label: "Move to", icon: <Folder size={14} />, items: moveItems }] : []),
         hideItem,
-        { label: "More", icon: <Ellipsis size={14} />, items: [...(pinned ? lifecycleItems(thread) : []), ...(bot.primary ? [] : [mainBotItem]), renameItem, copyIdItem, deleteItem] },
+        { label: "More", icon: <Ellipsis size={14} />, items: [...(pinned ? lifecycleItems(thread) : []), ...(bot.primary ? [] : [mainBotItem, creatorItem]), renameItem, copyIdItem, deleteItem] },
       ];
       setMenu({ x: e.clientX, y: e.clientY, items });
       return;
@@ -192,6 +199,7 @@ export function Sidebar({ wide = false }: { wide?: boolean }) {
     const items: MenuItem[] = [
       ...lifecycleItems(thread),
       mainBotItem,
+      creatorItem,
       ...organizationItems,
       unreadItem,
       renameItem,
@@ -210,7 +218,8 @@ export function Sidebar({ wide = false }: { wide?: boolean }) {
     <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-4">
       {[pinned, ...groups.map((g) => g.bots)].filter((group) => group.length).map((group, index) => <div key={index} className="flex flex-col items-center gap-2 border-b border-line py-3 last:border-0">{group.map((bot) => {
         const status = botStatus(bot);
-        return <RosterButton key={bot.slug} title={`${bot.name}${bot.primary ? " · Main Bot" : ""}${status === "waiting" ? " · Waiting for you" : ""}`} aria-label={bot.name} aria-current={selected === bot.slug ? "page" : undefined} onClick={() => select(bot.slug)} onMenu={(event) => openMenu(event, bot)} className={clsx("relative grid size-[54px] place-items-center rounded-[14px]", selected === bot.slug ? "bg-active" : "hover:bg-hover")}><ActivityAvatar threadId={bot.mainThreadId} status={status} shape={bot.shape} color={bot.color} picture={bot.avatarImage} size={36} star={bot.primary} />{(status === "waiting" || status === "unread") && <Dot status={status} className="absolute right-1 bottom-1" />}</RosterButton>;
+        const role = botRole(bot);
+        return <RosterButton key={bot.slug} title={`${bot.name}${role ? " · " + role : ""}${status === "waiting" ? " · Waiting for you" : ""}`} aria-label={bot.name} aria-description={role ?? undefined} aria-current={selected === bot.slug ? "page" : undefined} onClick={() => select(bot.slug)} onMenu={(event) => openMenu(event, bot)} className={clsx("relative grid size-[54px] place-items-center rounded-[14px]", selected === bot.slug ? "bg-active" : "hover:bg-hover")}><ActivityAvatar threadId={bot.mainThreadId} status={status} shape={bot.shape} color={bot.color} picture={bot.avatarImage} size={36} role={role} />{(status === "waiting" || status === "unread") && <Dot status={status} className="absolute right-1 bottom-1" />}</RosterButton>;
       })}</div>)}
       <RoomsCompact />
     </div>
@@ -241,19 +250,20 @@ export function Sidebar({ wide = false }: { wide?: boolean }) {
           <div className="pinned-bots flex flex-wrap gap-1 px-1 pt-1 pb-3">
             {pinned.map((b) => {
               const st = botStatus(b);
+              const role = botRole(b);
               return (
                 <div key={b.slug} className="relative" data-status={st}>
                 <RosterButton
                   onClick={() => select(b.slug)}
                   onMenu={(e) => openMenu(e, b)}
-                  aria-label={`${b.name}${b.primary ? ", main Bot" : ""}`}
+                  aria-label={`${b.name}${role ? ", " + role.toLowerCase() : ""}`}
                   className={clsx("pinned-bot flex w-[76px] flex-col items-center gap-1.5 rounded-2xl pt-2.5 pb-2 transition-colors", selected === b.slug ? "bg-active" : "hover:bg-hover")}
                 >
                   <span className="relative">
-                    <ActivityAvatar threadId={b.mainThreadId} status={st} quietWaiting={wide} shape={b.shape} color={b.color} picture={b.avatarImage} size={wide ? 52 : 60} star={b.primary} />
+                    <ActivityAvatar threadId={b.mainThreadId} status={st} quietWaiting={wide} shape={b.shape} color={b.color} picture={b.avatarImage} size={wide ? 52 : 60} role={role} />
                     {(st === "waiting" || (!wide && st === "unread")) && <Dot status={st} className="absolute -top-0.5 -right-0.5" />}
                   </span>
-                  <span className="pinned-name w-full truncate px-1 text-center text-[12px] text-fg/90">{b.name}{wide && st === "unread" && <Dot status={st} className="ml-1.5 inline-block align-middle" />}{b.primary && <span className="pinned-main-label block text-[10px] text-muted">Main Bot</span>}</span>
+                  <span className="pinned-name w-full truncate px-1 text-center text-[12px] text-fg/90">{b.name}{wide && st === "unread" && <Dot status={st} className="ml-1.5 inline-block align-middle" />}{role && <span className="pinned-role-label block text-[10px] text-muted">{role}</span>}</span>
                 </RosterButton>
                 <button aria-label={`Options for ${b.name}`} title={`Options for ${b.name}`} onClick={(event) => openMenu(event, b)} className="absolute -top-1 right-0 grid size-7 place-items-center rounded-full bg-sidebar text-muted hover:bg-hover"><Ellipsis size={16} /></button>
                 </div>
@@ -348,7 +358,7 @@ function BotRow({ bot, selected, onMenu, large }: { large: boolean; bot: Bot; se
       onMenu={(e) => onMenu(e, bot)}
       className={clsx("bot-row flex w-full items-center gap-3 rounded-[10px] px-2 py-[9px] text-left transition-colors", selected ? "bg-active" : "hover:bg-hover")}
     >
-      <ActivityAvatar threadId={bot.mainThreadId} status={st} quietWaiting={large} shape={bot.shape} color={bot.color} picture={bot.avatarImage} size={large ? 44 : 36} star={bot.primary} />
+      <ActivityAvatar threadId={bot.mainThreadId} status={st} quietWaiting={large} shape={bot.shape} color={bot.color} picture={bot.avatarImage} size={large ? 44 : 36} />
       <span className="min-w-0 flex-1 pr-7">
         <span className="flex items-baseline gap-2"><span className="bot-row-name block min-w-0 flex-1 truncate text-[13.5px] leading-5 text-fg">{bot.name}</span><span className="bot-row-time hidden shrink-0 text-[12px] text-faint">{messageDate(p.at ?? undefined)}</span></span>
         <span className={clsx("bot-row-preview flex min-w-0 items-center gap-1.5 text-[12.5px] leading-[18px]", p.tone === "attention" ? "text-attention" : "text-muted")}>{p.icon && <PreviewIcon>{p.icon}</PreviewIcon>}<span className="min-w-0 truncate">{p.text}</span></span>

@@ -124,3 +124,51 @@ test('settings instruction refresh and replacement share the writer, so old prom
   assert.doesNotMatch(instructions.get('alpha')!, /You are the primary Bot/);
   assert.match(instructions.get('beta')!, /You are the primary Bot/);
 });
+
+test('Bot Creator can move to another Bot, be removed, and cannot also be Main Bot', async (t) => {
+  const { registry, file } = await fixture(t, { alpha: { primary: true }, beta: {}, gamma: {} });
+  assert.equal((await registry.get('beta'))?.creator, false);
+  await assert.rejects(registry.save('alpha', { creator: true }), { status: 409 });
+  await assert.rejects(registry.save('beta', { creator: 'yes' }), { status: 400 });
+  await Promise.all([registry.save('beta', { creator: true }), registry.save('gamma', { creator: true })]);
+  assert.deepEqual((await registry.list()).filter((bot) => bot.creator).map((bot) => bot.slug), ['gamma']);
+  assert.equal(JSON.parse(await readFile(file('beta'), 'utf8')).creator, false);
+  assert.equal((await registry.save('gamma', { creator: false })).creator, false);
+  await registry.save('beta', { creator: true });
+  const promoted = (await registry.select('beta')).find((bot) => bot.slug === 'beta');
+  assert.equal(promoted?.primary, true);
+  assert.equal(promoted?.creator, false);
+});
+
+test('loading duplicate Creator flags keeps the latest visible non-main Bot and clears the other flags on disk', async (t) => {
+  const { registry, file } = await fixture(t, {
+    alpha: { primary: true, creator: true },
+    beta: { creator: true },
+    gamma: { creator: true, updatedAt: '2026-02-01T00:00:00Z' },
+    delta: { creator: true, hidden: true, updatedAt: '2026-03-01T00:00:00Z' },
+  });
+  assert.deepEqual((await registry.list()).filter((bot) => bot.creator).map((bot) => bot.slug), ['gamma']);
+  for (const slug of ['alpha', 'beta', 'delta']) {
+    assert.equal(JSON.parse(await readFile(file(slug), 'utf8')).creator, false);
+  }
+});
+
+test('hiding, archiving or deleting the Bot Creator clears its role', async (t) => {
+  const { botsRoot, file } = await fixture(t, {
+    alpha: { primary: true },
+    beta: { creator: true, projectId: 'project-b', mainThreadId: 'thread-b' },
+  });
+  const archived = new Set<string>();
+  const registry = createMainBotRegistry({ botsRoot, archivedProjects: async () => archived });
+  assert.equal((await registry.save('beta', { hidden: true })).creator, false);
+  await registry.save('beta', { hidden: false, creator: true });
+  archived.add('project-b');
+  assert.equal((await registry.get('beta'))?.creator, false);
+  assert.equal(JSON.parse(await readFile(file('beta'), 'utf8')).creator, false);
+  archived.clear();
+  await registry.save('beta', { creator: true });
+  assert.equal((await registry.remove('beta')).some((bot) => bot.creator), false);
+  const [historical] = await archivedBotIdentities(path.join(botsRoot, '.botapp/trash'));
+  assert.equal(historical.creator, false);
+  assert.equal((await registry.save('beta', { name: 'New Beta' }, { create: true })).creator, false);
+});

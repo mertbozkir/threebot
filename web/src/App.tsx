@@ -20,6 +20,7 @@ import { ColumnDivider } from "./components/ColumnDivider";
 import { Modal, Pill, Spinner } from "./components/ui";
 import { boot, botStatus, machineOf, openDialog, select, setDetailsOpen, setMainBot, setSidebarCompact, updateBot, useApp, useProjectsOn, type MainBotIntent } from "./store";
 import { api } from "./lib/api";
+import { comparePinnedBots, isPinnedBot } from "./lib/botRoles";
 import { MOBILE_LAYOUT_QUERY } from "./lib/layout";
 import { navigationFor, navigationUrl, readNavigation, restoreNavigation } from "./lib/navigation";
 import { runBackGuard } from "./lib/backGuard";
@@ -55,8 +56,8 @@ function useShortcuts() {
       else if (e.key === "b") { e.preventDefault(); if (e.altKey) setDetailsOpen(!useApp.getState().detailsOpen); else setSidebarCompact(!useApp.getState().sidebarCompact); }
       else if (/^[1-9]$/.test(e.key)) {
         const bots = Object.values(useApp.getState().bots).filter((b) => !b.hidden);
-        const pinned = bots.filter((b) => b.primary || b.pinned).sort((a, b) => Number(b.primary) - Number(a.primary) || a.createdAt.localeCompare(b.createdAt));
-        const ordered = [...pinned, ...bots.filter((b) => !b.primary && !b.pinned)];
+        const pinned = bots.filter(isPinnedBot).sort(comparePinnedBots);
+        const ordered = [...pinned, ...bots.filter((bot) => !isPinnedBot(bot))];
         const b = ordered[Number(e.key) - 1];
         if (b) { e.preventDefault(); select(b.slug); }
       }

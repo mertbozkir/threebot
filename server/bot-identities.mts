@@ -16,7 +16,7 @@ export async function archivedBotIdentities(trashRoot: string) {
       slug: match[1], workspaceRoot, name: meta.name, label: typeof meta.label === "string" ? meta.label : "",
       shape: typeof meta.shape === "string" ? meta.shape : "blob", color: typeof meta.color === "string" ? meta.color : "gray",
       ...(typeof meta.avatarImage === "string" ? { avatarImage: meta.avatarImage } : {}),
-      section: null, pinned: false, hidden: true, primary: false, notifications: false,
+      section: null, pinned: false, hidden: true, primary: false, creator: false, notifications: false,
       projectId: typeof meta.projectId === "string" ? meta.projectId : null, mainThreadId: meta.mainThreadId,
       createdAt: typeof meta.createdAt === "string" ? meta.createdAt : new Date(Number(match[2])).toISOString(),
     });
