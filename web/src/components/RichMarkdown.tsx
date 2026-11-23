@@ -8,6 +8,8 @@ import { parseThreadLink } from "../lib/botMessages";
 import { MarkdownCodeBlock } from "./MarkdownCodeBlock";
 import { MermaidDiagram } from "./MermaidDiagram";
 import "./MermaidDiagram.css";
+// KaTeX code loads lazily, but its CSS stays in the shell so the math fonts install offline with it.
+import "katex/dist/katex.min.css";
 
 export type RichMarkdownProps = {
   children: string;

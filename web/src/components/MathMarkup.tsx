@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import katex from "katex";
-import "katex/dist/katex.min.css";
 
 export default function MathMarkup({ source, display }: { source: string; display: boolean }) {
   const html = useMemo(() => source.length <= 20000 ? katex.renderToString(source, {
