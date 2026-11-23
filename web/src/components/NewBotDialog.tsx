@@ -7,7 +7,6 @@ import { createBot, defaultModel, deleteBot, ensureBotSection, openDialog, relea
 import { DEFAULT_AVATAR } from "../lib/character";
 import { sharedObjects } from "../lib/objectAvatars";
 import type { Bot } from "../lib/types";
-import { botRole } from "../lib/botRoles";
 import { useAvatarDrawing } from "./useAvatarDrawing";
 import { composeBotInstructions, BOT_INSTRUCTIONS_MAX } from "../lib/botInstructions";
 
@@ -34,10 +33,6 @@ export function NewBotDialog() {
   const tooLong = instructions.length > BOT_INSTRUCTIONS_MAX;
   const newSection = sectionChoice === "new";
   const canCreate = name.trim() && (!newSection || sectionName.trim()) && !busy && !tooLong;
-  const rolesInSection = (section: string | null) => {
-    const roles = Object.values(bots).filter((bot) => !bot.hidden && bot.section === section).map(botRole).filter(Boolean);
-    return roles.length ? " · " + roles.join(", ") : "";
-  };
 
   const create = async () => {
     if (!canCreate) return;
@@ -69,8 +64,8 @@ export function NewBotDialog() {
             className="new-bot-name mt-4 h-10 w-full rounded-xl border border-line bg-transparent text-center text-[14px] outline-none placeholder:text-faint focus:border-line-strong"
           />
           <select aria-label="Section" value={sectionChoice} disabled={busy} onChange={(e) => setSectionChoice(e.target.value)} className="new-bot-section mt-2 h-9 w-full rounded-xl border border-line bg-elevated px-3 text-[13px] outline-none focus:border-line-strong">
-            <option value="">Unassigned{rolesInSection(null)}</option>
-            {sections?.map((section) => <option key={section} value={SECTION_PREFIX + section}>{section}{rolesInSection(section)}</option>)}
+            <option value="">Unassigned</option>
+            {sections?.map((section) => <option key={section} value={SECTION_PREFIX + section}>{section}</option>)}
             <option value="new">New section…</option>
           </select>
           {newSection && <input

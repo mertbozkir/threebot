@@ -807,7 +807,7 @@ test("New Bot saves chosen and new sections, and the sidebar menu toggles Bot Cr
     const picker = labeled<HTMLSelectElement>("Section");
     assert.ok(picker);
     assert.equal(picker.selectedOptions[0].textContent, "Unassigned");
-    assert.equal(picker.options[1].textContent, "Work · Main Bot");
+    assert.equal(picker.options[1].textContent, "Work");
     const option = Array.from(picker.options).find((option) => option.textContent?.startsWith(choice));
     assert.ok(option, choice);
     await select("Section", option.value);
