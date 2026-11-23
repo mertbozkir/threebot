@@ -2,7 +2,7 @@ import { automatedMessage, type AutomatedMessage } from "./automatedMessage";
 import { REASONING_SELECT_DESCRIPTOR_IDS } from "./modelTraits";
 import type { Bot, ModelSelection, Run, RuntimeRequest, ScheduledTask, TurnItem } from "./types";
 import { botDelivery, shortToolName } from "./botMessages";
-import { questionAnswerMessageId } from "./runtimeRequests";
+import { findRequest, questionAnswerMessageId } from "./runtimeRequests";
 import { parseReply } from "./reply";
 
 // Turns T3 turn items into chat entries: bubbles, cards and
@@ -338,11 +338,6 @@ function pageOf(i: TurnItem): { attachmentId: string; title?: string; height?: n
 
 function hasImage(i: TurnItem) {
   return Boolean(i.viewedImagePath) || (Array.isArray(i.outputImages) && i.outputImages.length > 0) || /"image"/.test(JSON.stringify(i.output ?? "").slice(0, 2000));
-}
-
-function findRequest(reqs: Record<string, RuntimeRequest>, requestId: string | undefined) {
-  if (!requestId) return undefined;
-  return reqs[requestId] ?? Object.values(reqs).find((r) => r.id.endsWith(requestId) || requestId.endsWith(r.id));
 }
 
 // ---------- working status ----------

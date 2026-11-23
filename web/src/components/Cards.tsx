@@ -11,7 +11,7 @@ import { timeAgo } from "../lib/projects";
 import { assetKey, assetSource } from "../lib/assetCopies";
 import type { Entry } from "../lib/transcript";
 import type { Bot } from "../lib/types";
-import { approvalDecision, approvalOptions, questionAnswers, requestQuestions, requestStatus, secretLink, secretStatus, type ApprovalDecision, type QuestionAnswers } from "../lib/runtimeRequests";
+import { approvalDecision, approvalOptions, customQuestionAnswer, questionAnswers, requestQuestions, requestStatus, secretLink, secretStatus, type ApprovalDecision, type QuestionAnswers } from "../lib/runtimeRequests";
 import { finishQuestionDraft, questionDraft } from "../lib/questionDrafts";
 import "./RequestCards.css";
 import "./AutomatedCard.css";
@@ -214,11 +214,8 @@ function QuestionRequestCard({ entry, threadId }: QuestionProps) {
   const chosen = (value: string) => Array.isArray(selection) ? selection.includes(value) : selection === value;
   const values = resolved ? Array.isArray(selection) ? selection : typeof selection === "string" ? [selection] : [] : [];
   const customValues = values.filter((value) => !q.options.some((option) => (option.value ?? option.label) === value));
-  // Preserve literal proposed text. Custom responses are strings even on a
-  // multi-select question; offered multiple choices remain arrays, as in T3.
-  const customAnswer = q.initialAnswer !== undefined ? custom : custom.trim();
-  const hasCustom = showCustom && q.allowCustomAnswer && customAnswer.trim().length > 0;
-  const currentAnswer = hasCustom ? customAnswer : Array.isArray(selection) ? selection.length ? selection : null : typeof selection === "string" && selection.length ? selection : null;
+  const customAnswer = showCustom ? customQuestionAnswer(q, custom) : null;
+  const currentAnswer = customAnswer ?? (Array.isArray(selection) ? selection.length ? selection : null : typeof selection === "string" && selection.length ? selection : null);
   const submitCurrent = () => { if (currentAnswer !== null) submit({ ...draft.getSnapshot().answers, [q.id]: currentAnswer }); };
   const statusLabel = resolved ? "Answered" : status === "expired" ? "Expired" : status === "cancelled" ? "Cancelled" : status === "unavailable" ? "Unavailable" : "Waiting for you";
   const customField = {

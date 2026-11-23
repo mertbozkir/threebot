@@ -28,6 +28,11 @@ function decision(value: unknown): ApprovalDecision | undefined {
   }
 }
 
+export function findRequest(reqs: Record<string, RuntimeRequest>, requestId: unknown) {
+  if (typeof requestId !== "string" || !requestId) return undefined;
+  return reqs[requestId] ?? Object.values(reqs).find((r) => r.id.endsWith(requestId) || requestId.endsWith(r.id));
+}
+
 export function requestStatus(item: TurnItem, request?: RuntimeRequest): RequestStatus {
   if (request && request.status !== "pending") return request.status;
   // Terminal turn items must not become actionable if a request snapshot lags.
@@ -71,6 +76,12 @@ export function requestQuestions(value: unknown): Question[] {
     });
     return [{ id: q.id, question: q.question, options, header: typeof q.header === "string" ? q.header : undefined, multiSelect: q.multiSelect === true, allowCustomAnswer: q.allowCustomAnswer !== false, initialAnswer: typeof q.initialAnswer === "string" ? q.initialAnswer : undefined }];
   });
+}
+
+export function customQuestionAnswer(question: Question, text: string): string | null {
+  const trimmed = text.trim();
+  if (!question.allowCustomAnswer || !trimmed) return null;
+  return question.initialAnswer === undefined ? trimmed : text;
 }
 
 export function questionAnswers(item: TurnItem, request?: RuntimeRequest): QuestionAnswers {

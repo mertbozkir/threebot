@@ -1,6 +1,8 @@
-import { requestNotificationPermission, sendMessage, toast, uploadAttachment, type Attachment } from "../store";
+import { answerQuestion, requestNotificationPermission, sendMessage, toast, uploadAttachment, useApp, type Attachment } from "../store";
 import { T3RpcError, uuid } from "./t3";
 import { parseReply, withReply } from "./reply";
+import { questionDraft } from "./questionDrafts";
+import { customQuestionAnswer, findRequest, requestQuestions, requestStatus } from "./runtimeRequests";
 import type { Bot } from "./types";
 
 type DraftAttachment = { state: "uploading" | "ready"; attachment: Attachment };
@@ -137,9 +139,44 @@ class ChatDraft {
     }
   };
 
+  private submitQuestion(text: string) {
+    const threadId = this.threadId;
+    if (!threadId) return false;
+    const data = useApp.getState().threadData[threadId];
+    if (!data || data.stale) return false;
+
+    const pending = Object.values(data.items).flatMap((item) => {
+      if (item.type !== "user_input_request") return [];
+      const request = findRequest(data.requests, item.requestId);
+      return requestStatus(item, request) === "pending" ? [{ item, request }] : [];
+    });
+    if (pending.length !== 1) return false;
+
+    const [{ item, request }] = pending;
+    const requestId: unknown = item.requestId;
+    const questions = requestQuestions(item.questions);
+    if (questions.length !== 1 || typeof requestId !== "string" || !requestId) return false;
+    const [question] = questions;
+    const answer = customQuestionAnswer(question, text);
+    if (answer === null) return false;
+
+    const owner = questionDraft({ threadId, requestId, itemId: item.id }, questions);
+    if (!owner.editable) return true;
+
+    const revision = this.revision;
+    requestNotificationPermission();
+    this.update({ sending: true });
+    void owner.send(() => answerQuestion(threadId, request?.id ?? requestId, { [question.id]: answer })).then((sent) => {
+      const clear = sent && revision === this.revision;
+      this.update(clear ? { text: "", sending: false } : { sending: false }, clear);
+    });
+    return true;
+  }
+
   submit = () => {
     const { text, attachments, sending, replyTo, fresh } = this.snapshot;
     if (sending || (!text.trim() && !attachments.length) || attachments.some((item) => item.state === "uploading")) return;
+    if (!attachments.length && !replyTo && !fresh && !this.retryMessageId && this.submitQuestion(text)) return;
     const message: UnsentMessage = { id: this.retryMessageId ?? uuid(), text: withReply(text, replyTo), attachments: attachments.map((item) => item.attachment), ...(fresh ? { fresh: true } : {}) };
     this.retryMessageId = null;
     this.inFlight = message;

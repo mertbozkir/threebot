@@ -1,5 +1,5 @@
 import { useApp } from "../store";
-import type { Question, QuestionAnswers } from "./runtimeRequests";
+import { findRequest, type Question, type QuestionAnswers } from "./runtimeRequests";
 import type { RuntimeRequest, TurnItem } from "./types";
 
 type Identity = { threadId: string; requestId: string; itemId: string };
@@ -72,17 +72,20 @@ class QuestionDraft {
     this.update({ step: this.snapshot.step - 1, ...(this.editors.get(previousQuestion.id) ?? editor(previousQuestion)) });
   };
 
-  send = async (action: () => Promise<void>, discard = false) => {
-    if (!this.editable) return;
+  send = async (action: () => Promise<void>, discard = false): Promise<boolean> => {
+    if (!this.editable) return false;
     // Claim before invoking the transport, so another mounted card cannot send.
     this.update({ response: "submitting" });
     try {
       await action();
-      if (!this.active) return;
-      if (discard) this.editors.clear();
-      this.update({ response: "submitted", ...(discard ? { answers: {}, custom: "", showCustom: false } : {}) });
+      if (this.active) {
+        if (discard) this.editors.clear();
+        this.update({ response: "submitted", ...(discard ? { answers: {}, custom: "", showCustom: false } : {}) });
+      }
+      return true;
     } catch {
       if (this.active) this.update({ response: "error" });
+      return false;
     }
   };
 
@@ -125,8 +128,7 @@ export function questionDraft(identity: Identity, questions: Question[]) {
       const data = threadData[owner.identity.threadId];
       const item = data?.items[owner.identity.itemId];
       if (!item) continue;
-      const requestId = owner.identity.requestId;
-      const request = data.requests[requestId] ?? Object.values(data.requests).find((candidate) => candidate.id.endsWith(requestId) || requestId.endsWith(candidate.id));
+      const request = findRequest(data.requests, owner.identity.requestId);
       if (terminal(item, request)) finishQuestionDraft(owner);
     }
   });
