@@ -61,6 +61,11 @@ export function BotMap({ narrow, onBack }: { narrow: boolean; onBack: () => void
       related.add(edge.to);
     }
   }
+  // The Bot Creator looks after every Bot, so it links to the ones it hasn't messaged too.
+  if (active?.creator) for (const bot of visible) if (!related.has(bot.slug)) {
+    connections.push({ from: active.slug, to: bot.slug, count: 0 });
+    related.add(bot.slug);
+  }
 
   useLayoutEffect(() => {
     const element = stage.current;
@@ -111,7 +116,7 @@ export function BotMap({ narrow, onBack }: { narrow: boolean; onBack: () => void
       <div ref={stage} className="relative mx-auto max-w-[1200px]">
         {active && connections.length > 0 && <svg aria-hidden="true" className="pointer-events-none absolute inset-0 z-[1] size-full overflow-visible"
           fill="none" stroke={botColor(active.color)} strokeOpacity={0.8} strokeLinecap="round">
-          {connections.map(({ from, to, count }) => <path key={`${from}:${to}`} d={connectionPath(positions.get(from), positions.get(to))} strokeWidth={Math.min(7, 1 + count / 3)} />)}
+          {connections.map(({ from, to, count }) => <path key={`${from}:${to}`} d={connectionPath(positions.get(from), positions.get(to))} strokeWidth={count ? Math.min(7, 1 + count / 3) : 1} strokeDasharray={count ? undefined : "4 5"} />)}
         </svg>}
         {leads.length > 0 && <div className="mb-5 flex justify-center gap-10">{leads.map(node)}</div>}
         <div className={clsx("grid gap-4", narrow ? "grid-cols-1" : "grid-cols-[repeat(auto-fit,minmax(min(100%,190px),1fr))]")}>
