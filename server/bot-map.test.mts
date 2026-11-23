@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -49,11 +49,14 @@ test("Bot Map keeps counts on failure, deduplicates replay, and reloads its curs
       return { sequence: 9, full: false, messages };
     },
   };
+  await writeFile(file + ".tmp", "stale");
+  await chmod(file + ".tmp", 0o644);
   const map = createBotMap(options);
   assert.deepEqual(await map.read(), { edges: [], unread: ["alpha", "beta"] });
   assert.deepEqual(await map.read(), { edges: [], unread: ["alpha", "beta"] });
   await map.refresh();
   assert.deepEqual(await map.read(), { edges: [edge(1)], unread: ["alpha"] });
+  if (process.platform !== "win32") assert.equal((await stat(file)).mode & 0o777, 0o600);
 
   pass = 1;
   await map.refresh();
