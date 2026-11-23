@@ -101,8 +101,7 @@ type State = {
   toast: string | null;
   /** A link shown after the toast's text, such as release notes. `open` handles it in the app instead. */
   toastLink: ToastLink | null;
-  /** The Projects page replaces the chat while it's open; projectItemId is the item shown in it. */
-  page: "projects" | "room" | null;
+  page: "projects" | "map" | "room" | null;
   projectItemId: string | null;
   /** Rooms: summaries for the sidebar, the open room and its 2 s view poll. */
   rooms: Record<string, RoomSummary>;
@@ -290,6 +289,7 @@ function openRoute(bots: Bot[], historical: Bot[]) {
   const routeBot = bots.find((b) => b.slug === route.get("bot")) ?? historical.find((b) => `archived:${b.mainThreadId}` === route.get("bot"));
   if (!routeBot && route.get("environment") && route.get("thread")) set({ selected: bots.find((bot) => bot.slug === get().selected)?.slug ?? bots.find((bot) => bot.primary)?.slug ?? bots[0]?.slug ?? null, selectedThreadId: threadKey({ environmentId: route.get("environment")!, threadId: route.get("thread")! }) });
   if (route.get("page") === "projects" || route.get("item")) set({ page: "projects", projectItemId: /^[a-z0-9]{4,24}$/.test(route.get("item") ?? "") ? route.get("item") : null });
+  else if (route.get("page") === "map") openBotMap();
   if (routeBot) set({ selected: bots.includes(routeBot) ? routeBot.slug : `archived:${routeBot.mainThreadId}`, selectedThreadId: route.get("thread") && route.get("environment") ? threadKey({ environmentId: route.get("environment")!, threadId: route.get("thread")! }) : route.get("thread"), exchangeBotSlug: bots.some((b) => b.slug === route.get("exchange")) ? route.get("exchange") : null });
   if (routeRoom && !routeRoomOpened) {
     routeRoomOpened = true;
@@ -575,16 +575,14 @@ export function watchedBot(): string | null {
 
 /**
  * What this device has open and in focus, as the presence key the gateway compares against a push.
- * A room wins when the room page is showing; otherwise it is the selected Bot's conversation, unless
- * the Projects page covers it.
+ * A room wins when the room page is showing. The selected Bot counts only when its chat is showing.
  * Returning both null means the page is not looking at either, so nothing should be held back.
  */
 export function watchedView(): { bot: string | null; room: string | null } {
   if (document.visibilityState !== "visible" || !document.hasFocus()) return { bot: null, room: null };
   const state = get();
   if (state.page === "room" && state.selectedRoom) return { bot: null, room: state.selectedRoom };
-  // The Projects page covers the conversation, so a push about the selected Bot is not on screen.
-  if (state.page === "projects") return { bot: null, room: null };
+  if (state.page) return { bot: null, room: null };
   return { bot: state.selected, room: null };
 }
 const ACTIVE = ["preparing", "queued", "starting", "running", "waiting"];
@@ -1425,6 +1423,10 @@ export const useProjectsOn = () => useApp((s) => s.settings?.beta?.projects === 
 /** Open the Projects page, optionally on one item. */
 export function openProjects(itemId: string | null = null) {
   set({ page: "projects", projectItemId: itemId, exchangeBotSlug: null, dialog: null });
+}
+
+export function openBotMap() {
+  set({ page: "map", projectItemId: null, exchangeBotSlug: null, dialog: null, detailsOpen: false });
 }
 
 export function openDialog(dialog: Dialog) {
