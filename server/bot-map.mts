@@ -17,6 +17,24 @@ type Edge = { from: string; to: string; count: number };
 const REFRESH_MS = 60_000;
 const READ_TIMEOUT_MS = 120_000;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isOptionalString(value: unknown) {
+  return value == null || typeof value === "string";
+}
+
+function isState(value: unknown): value is State {
+  return isRecord(value) && isRecord(value.receivers) && isRecord(value.senders)
+    && Object.values(value.receivers).every((receiver) => isRecord(receiver)
+      && Number.isSafeInteger(receiver.sequence) && isRecord(receiver.messages)
+      && Object.values(receiver.messages).every((id) => typeof id === "string"))
+    && Object.values(value.senders).every((sender) => isRecord(sender) && typeof sender.id === "string"
+      && isOptionalString(sender.projectId) && (sender.lineage == null || (isRecord(sender.lineage)
+        && isOptionalString(sender.lineage.rootThreadId) && isOptionalString(sender.lineage.parentThreadId))));
+}
+
 export function aggregateBotEdges(bots: MapBot[], senders: State["senders"], receivers: State["receivers"]): Edge[] {
   const owner = botThreadOwner(bots);
   const edges = new Map<string, Edge>();
@@ -90,18 +108,24 @@ export function createBotMap({ file, bots, threads, readThread, log = () => {} }
   let refreshedAt = 0;
 
   function load(): Promise<State> {
-    return state ??= fs.readFile(file, "utf8").then((raw) => JSON.parse(raw) as State)
-      .catch((error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOENT") return { receivers: {}, senders: {} };
-        state = undefined;
-        throw error;
-      });
+    return state ??= fs.readFile(file, "utf8").then((raw) => {
+      let parsed: unknown;
+      try { parsed = JSON.parse(raw); } catch {}
+      if (isState(parsed)) return parsed;
+      log("Bot Map could not load its saved state", "Invalid JSON or state shape");
+      return { receivers: {}, senders: {} };
+    }, (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return { receivers: {}, senders: {} };
+      state = undefined;
+      throw error;
+    });
   }
 
   async function save(next: State) {
     await fs.mkdir(path.dirname(file), { recursive: true });
     const tmp = `${file}.tmp`;
-    await fs.writeFile(tmp, JSON.stringify(next) + "\n", { mode: 0o600 });
+    await fs.rm(tmp, { force: true });
+    await fs.writeFile(tmp, JSON.stringify(next) + "\n", { mode: 0o600, flag: "wx" });
     await fs.rename(tmp, file);
     state = Promise.resolve(next);
   }

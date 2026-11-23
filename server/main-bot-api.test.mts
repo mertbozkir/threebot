@@ -2,67 +2,91 @@ import assert from 'node:assert/strict';
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import http from 'node:http';
 import net from 'node:net';
 import type { Readable } from 'node:stream';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
+import { startFakeT3 } from '../scripts/fixture-t3.mts';
 import type { Bot } from './main-bot.mts';
 
-// This gateway only sees temporary fixture directories and an unreachable local T3 port.
-// It never reads real credentials, connects to a real T3, or changes a user's Bots.
-test('gateway main-Bot endpoints persist replacement and reject unsafe hides/deletes', async () => {
-  const root = await mkdtemp(path.join(tmpdir(), 'main-bot-api-'));
+async function seedBots(root: string, withProjects = false) {
   const botsRoot = path.join(root, 'bots');
   for (const slug of ['alpha', 'beta']) {
     const dir = path.join(botsRoot, slug, '.bot');
     await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, 'bot.json'), JSON.stringify({ name: slug, mainThreadId: `thread-${slug}`, primary: true, createdAt: '2026-01-01T00:00:00Z' }));
+    await writeFile(path.join(dir, 'bot.json'), JSON.stringify({
+      name: slug, mainThreadId: `thread-${slug}`, primary: true, createdAt: '2026-01-01T00:00:00Z',
+      ...(withProjects ? { projectId: `project-${slug}` } : {}),
+    }));
   }
-  await mkdir(path.join(botsRoot, 'alpha', 'memory'), { recursive: true });
-  await writeFile(path.join(botsRoot, 'alpha', 'memory', 'MEMORY.md'), '# Alpha memory\n\n- [preference] Prefers short answers.\n');
+  return botsRoot;
+}
+
+async function gateway(root: string, t3Url = 'http://127.0.0.1:1') {
   const socket = net.createServer();
   socket.listen(0, '127.0.0.1');
   await once(socket, 'listening');
   const { port } = socket.address() as net.AddressInfo;
   await new Promise((resolve) => socket.close(resolve));
-  // Typed through a cast so the closures below that assign it don't leave it narrowed to null.
-  let processHandle = null as ChildProcessByStdio<null, Readable, Readable> | null;
-  try {
-    const start = async () => {
-      processHandle = spawn(process.execPath, [fileURLToPath(new URL('./gateway.mts', import.meta.url))], {
+  const url = `http://127.0.0.1:${port}`;
+  let processHandle: ChildProcessByStdio<null, Readable, Readable> | undefined;
+  let stderr = '';
+
+  return {
+    url,
+    logs: () => stderr,
+    async start() {
+      stderr = '';
+      const child = processHandle = spawn(process.execPath, [fileURLToPath(new URL('./gateway.mts', import.meta.url))], {
         env: {
           PATH: process.env.PATH, HOME: root, CODEX_HOME: path.join(root, 'codex'),
-          HOST: '127.0.0.1', PORT: String(port), BOTS_ROOT: botsRoot, T3_URL: 'http://127.0.0.1:1',
-          T3_TOKEN: 'fixture-only', BOT_MCP_TOKEN: 'fixture-only', BOT_PASSWORD: '',
+          HOST: '127.0.0.1', PORT: String(port), BOTS_ROOT: path.join(root, 'bots'), T3_URL: t3Url,
+          T3_TOKEN: 'fixture-only', BOT_MCP_TOKEN: 'fixture-only', BOT_PASSWORD: '', THREEBOT_TELEMETRY: '0',
           VAULT_FILE: path.join(root, 'vault.enc'), VAULT_KEY_FILE: path.join(root, 'vault-key'),
         }, stdio: ['ignore', 'pipe', 'pipe'],
       });
       let output = '';
-      processHandle.stderr.on('data', () => {});
+      child.stderr.on('data', (chunk) => { stderr += String(chunk); });
       await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('fixture gateway did not start')), 5000);
-        processHandle!.once('error', (error) => { clearTimeout(timeout); reject(error); });
-        processHandle!.once('exit', (code) => { clearTimeout(timeout); reject(new Error(`fixture gateway exited ${code}`)); });
-        processHandle!.stdout.on('data', (chunk) => {
+        const timeout = setTimeout(() => reject(new Error(`fixture gateway did not start: ${stderr}`)), 5000);
+        child.once('error', (error) => { clearTimeout(timeout); reject(error); });
+        child.once('exit', (code) => { clearTimeout(timeout); reject(new Error(`fixture gateway exited ${code}: ${stderr}`)); });
+        child.stdout.on('data', (chunk) => {
           output += String(chunk);
           if (output.includes('bot gateway on')) { clearTimeout(timeout); resolve(); }
         });
       });
-    };
-    const stop = async () => {
-      const exited = once(processHandle!, 'exit');
-      processHandle!.kill();
+    },
+    async stop() {
+      const child = processHandle;
+      if (!child?.pid || child.exitCode !== null || child.signalCode !== null) return;
+      const exited = once(child, 'exit');
+      child.kill();
       await exited;
-    };
-    const request = async (route: string, method = 'GET', body?: unknown) => {
-      const response = await fetch(`http://127.0.0.1:${port}${route}`, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
-      // The gateway's JSON replies, read field by field by the assertions below.
-      return { status: response.status, body: (await response.json()) as any };
-    };
+    },
+    async request(route: string, method = 'GET', body?: unknown) {
+      const response = await fetch(url + route, { method, signal: AbortSignal.timeout(5000), headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+      return { status: response.status, body: await response.json() };
+    },
+  };
+}
+
+// This gateway only sees temporary fixture directories and an unreachable local T3 port.
+// It never reads real credentials, connects to a real T3, or changes a user's Bots.
+test('gateway main-Bot endpoints persist replacement and reject unsafe hides/deletes', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'main-bot-api-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const botsRoot = await seedBots(root);
+  await mkdir(path.join(botsRoot, 'alpha', 'memory'), { recursive: true });
+  await writeFile(path.join(botsRoot, 'alpha', 'memory', 'MEMORY.md'), '# Alpha memory\n\n- [preference] Prefers short answers.\n');
+  const { url, start, stop, request } = await gateway(root);
+  try {
     const mcp = async (token: string, body: unknown) => {
-      const response = await fetch(`http://127.0.0.1:${port}/mcp/bot`, {
+      const response = await fetch(url + '/mcp/bot', {
         method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(body),
       });
       return (await response.json()) as any;
@@ -131,7 +155,7 @@ test('gateway main-Bot endpoints persist replacement and reject unsafe hides/del
     assert.match(alphaToken, /^[a-f0-9]{64}$/u);
     assert.notEqual(alphaToken, 'fixture-only');
     const alphaPi = JSON.parse(await readFile(path.join(botsRoot, 'alpha/.pi/mcp.json'), 'utf8'));
-    assert.equal(alphaPi.mcpServers.bot.url, `http://127.0.0.1:${port}/mcp/bot`);
+    assert.equal(alphaPi.mcpServers.bot.url, url + '/mcp/bot');
     assert.equal(alphaPi.mcpServers.bot.type, 'streamable-http');
     assert.equal(alphaPi.mcpServers.bot.headers.Authorization, `Bearer ${alphaToken}`);
     const listed = await mcp(alphaToken, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
@@ -176,14 +200,75 @@ test('gateway main-Bot endpoints persist replacement and reject unsafe hides/del
     assert.equal(archived[0].primary, false);
     assert.equal((await request('/api/bots/beta', 'DELETE')).status, 200);
     assert.deepEqual((await request('/api/bots')).body.bots, []);
-    await stop();
-    processHandle = null;
   } finally {
-    if (processHandle && processHandle.exitCode === null) {
-      const exited = once(processHandle, 'exit');
-      processHandle.kill();
-      await exited;
+    await stop();
+  }
+});
+
+test('gateway shares one archived-project fetch between roster reads and retries a failure', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'main-bot-cache-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const botsRoot = await seedBots(root);
+  let projectReads = 0;
+  const t3 = http.createServer((req, res) => {
+    if (req.url !== '/api/projects') { res.writeHead(404).end(); return; }
+    if (++projectReads === 1) { res.writeHead(503).end(); return; }
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+      projects: [{ id: 'project-beta', workspaceRoot: path.join(botsRoot, 'beta') }],
+    }));
+  });
+  t3.listen(0, '127.0.0.1');
+  await once(t3, 'listening');
+  t.after(() => new Promise<void>((resolve) => { t3.close(() => resolve()); t3.closeAllConnections(); }));
+  const { port } = t3.address() as net.AddressInfo;
+  const app = await gateway(root, `http://127.0.0.1:${port}`);
+  t.after(app.stop);
+  await app.start();
+  assert.equal((await app.request('/api/bots')).status, 200);
+  const profile = path.join(botsRoot, 'beta/.bot/bot.json');
+  await writeFile(profile, JSON.stringify({ ...JSON.parse(await readFile(profile, 'utf8')), projectId: 'project-beta', creator: true }));
+
+  const readRoster = async () => {
+    const response = await app.request('/api/bots');
+    assert.equal(response.status, 200);
+    assert.equal(response.body.bots.find((bot: Bot) => bot.slug === 'beta')?.creator, true);
+  };
+  await readRoster();
+  assert.equal(projectReads, 1, 'a failed project fetch should leave the roster available');
+  await readRoster();
+  assert.equal(projectReads, 2, 'the next roster read should retry the project fetch');
+  await readRoster();
+  assert.equal(projectReads, 2, 'the successful project fetch should be reused');
+});
+
+test('Bot Map endpoint rebuilds counts from a bad state file', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'bot-map-api-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const botsRoot = await seedBots(root, true);
+  const appDir = path.join(botsRoot, '.botapp');
+  await mkdir(appDir, { recursive: true });
+  const file = path.join(appDir, 'bot-map.json');
+  const t3 = await startFakeT3(root, 0, { scenario: 'interactions' });
+  t.after(t3.close);
+  const app = await gateway(root, `http://127.0.0.1:${t3.port}`);
+  t.after(app.stop);
+  for (const badState of ['{', '{"receivers":{"thread-alpha":{"sequence":1,"messages":null}},"senders":{}}']) {
+    await writeFile(file, badState);
+    await app.start();
+    const first = await app.request('/api/bot-map');
+    assert.deepEqual(first, { status: 200, body: { edges: [], unread: ['alpha', 'beta'] } });
+
+    const deadline = Date.now() + 5000;
+    let current = first;
+    while (current.body.unread?.length && Date.now() < deadline) {
+      await delay(20);
+      current = await app.request('/api/bot-map');
     }
-    await rm(root, { recursive: true, force: true });
+    assert.deepEqual(current, { status: 200, body: { edges: [
+      { from: 'beta', to: 'alpha', count: 1 },
+      { from: 'alpha', to: 'beta', count: 1 },
+    ], unread: [] } }, app.logs());
+    assert.equal((app.logs().match(/Bot Map could not load its saved state/g) ?? []).length, 1);
+    await app.stop();
   }
 });

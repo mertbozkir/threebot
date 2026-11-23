@@ -4,7 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { api, type BotMapEdge } from "../lib/api";
 import { botColor } from "../lib/character";
 import type { Bot } from "../lib/types";
-import { archivedInT3, useApp } from "../store";
+import { archivedInT3, select, useApp } from "../store";
 import { botRole, comparePinnedBots } from "../lib/botRoles";
 import { Avatar } from "./Avatar";
 
@@ -27,6 +27,7 @@ export function BotMap({ narrow, onBack }: { narrow: boolean; onBack: () => void
   const [unread, setUnread] = useState<string[]>([]);
   const [hovered, setHovered] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const pointer = useRef("mouse");
   const [positions, setPositions] = useState<Map<string, Point>>(() => new Map());
   const stage = useRef<HTMLDivElement>(null);
 
@@ -105,7 +106,8 @@ export function BotMap({ narrow, onBack }: { narrow: boolean; onBack: () => void
       onPointerLeave={(event) => { if (event.pointerType === "mouse") setHovered(null); }}
       onFocus={(event) => { if (event.currentTarget.matches(":focus-visible")) setHovered(bot.slug); }}
       onBlur={() => setHovered(null)}
-      onClick={() => setSelected((slug) => slug === bot.slug ? null : bot.slug)}>
+      onPointerDown={(event) => { pointer.current = event.pointerType; }}
+      onClick={() => { if (pointer.current === "mouse" || selected === bot.slug) select(bot.slug); else setSelected(bot.slug); }}>
       <span data-map-avatar={bot.slug} className="grid place-items-center rounded-full border border-line bg-chat p-1" style={active === bot ? { borderColor: botColor(bot.color) } : undefined}>
         <Avatar shape={bot.shape} color={bot.color} picture={bot.avatarImage} size={leads.includes(bot) ? 46 : 36} role={botRole(bot)} still />
       </span>
@@ -123,7 +125,7 @@ export function BotMap({ narrow, onBack }: { narrow: boolean; onBack: () => void
     </header>
     <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-4 py-5">
       <p className="mx-auto mb-5 max-w-[1200px] text-sm text-muted">
-        {visible.length ? "Hover or tap a Bot to see its message connections." : "No Bots to show."}
+        {visible.length ? "Hover or tap a Bot to see its message connections. Click, or tap again, to open it." : "No Bots to show."}
       </p>
       {unreadCount > 0 && <p role="status" className="mx-auto mb-5 max-w-[1200px] text-sm text-muted">
         Still counting messages for {unreadCount} {unreadCount === 1 ? "Bot" : "Bots"}.

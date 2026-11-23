@@ -629,11 +629,21 @@ function botDir(slug: string) {
   if (!SLUG_RE.test(slug)) throw Object.assign(new Error("bad slug"), { status: 400 });
   return path.join(cfg.botsRoot, slug);
 }
+const projectsClient = new T3Client({ baseUrl: cfg.t3Url, token });
+let archivedProjectsCache: { ids: ReadonlySet<string>; expiresAt: number } | undefined;
 const mainBots = createMainBotRegistry({
   botsRoot: cfg.botsRoot,
-  archivedProjects: async () => new Set(
-    (await t3Projects(2_000).catch(() => [])).filter((project) => project.archivedAt).map((project) => project.id),
-  ),
+  archivedProjects: async () => {
+    if (archivedProjectsCache && Date.now() < archivedProjectsCache.expiresAt) return archivedProjectsCache.ids;
+    try {
+      const projects = await t3Projects(2_000);
+      const ids = new Set(projects.filter((project) => project.archivedAt).map((project) => project.id));
+      archivedProjectsCache = { ids, expiresAt: Date.now() + 30_000 };
+      return ids;
+    } catch {
+      return new Set<string>();
+    }
+  },
   onBotChanged: async (bot) => {
     await writeAgentsMd(bot, await getSettings()).catch((error) => console.error("refreshing Bot instructions failed", error));
   },
@@ -934,8 +944,7 @@ async function freeSlug(name: string) {
 /** A T3 project as /api/projects lists it; only the fields used here. */
 type T3ProjectRow = { id: string; title?: string; workspaceRoot?: string; deletedAt?: string | null; archivedAt?: string | null };
 async function t3Projects(timeout = 15_000): Promise<T3ProjectRow[]> {
-  const client = new T3Client({ baseUrl: cfg.t3Url, token });
-  const { projects } = await client.http("/api/projects", { signal: AbortSignal.timeout(timeout) });
+  const { projects } = await projectsClient.http("/api/projects", { signal: AbortSignal.timeout(timeout) });
   return (projects ?? []).filter((project: T3ProjectRow) => project.id && project.workspaceRoot && !project.deletedAt);
 }
 /** This machine's T3 projects that could become Bots: not already a Bot, and not inside the Bots folder. */
