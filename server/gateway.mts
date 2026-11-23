@@ -22,6 +22,7 @@ import { startProvisioner } from "./provisioner.mts";
 import { keepThreadsActive, settleQuietThreads } from "./auto-settle.mts";
 import { archivedBotIdentities } from "./bot-identities.mts";
 import { createMainBotRegistry, type Bot, type BotPatch } from "./main-bot.mts";
+import { createBotMap } from "./bot-map.mts";
 import {
   CLAUDE_FILE, CODEX_FILE, CONFIG_FILES, LOCAL_ENVIRONMENT, archiveAdoptedData, excludePatterns, gitRepo, mergeJsonFile, planAdoption,
   projectAgentsMd, readAdopted, registerAdopted, samePath, undoAdoptionFiles, unregisterAdopted, updateAdopted, withProjectAgents, within,
@@ -598,6 +599,12 @@ const mainBots = createMainBotRegistry({
 });
 const getBot = (slug: string) => mainBots.get(slug);
 const listBots = () => mainBots.list();
+const botMap = createBotMap({
+  bots: listBots,
+  threads: () => shellThreads(false),
+  projection: (threadId) => firstOf("orchestration.subscribeThread", { threadId, acceptBoundedSnapshot: true },
+    (event) => event.kind === "snapshot" ? event.projection : undefined),
+});
 /** A palette name or any hex spelling, stored as a name or "#rrggbb"; anything else is a 400. */
 const colorPatch = <T extends { color?: unknown }>(patch: T): T => patch && patch.color !== undefined ? { ...patch, color: avatarColorPatch(patch.color) } : patch;
 const saveBot = async (slug: string, patch: BotPatch) => {
@@ -1547,6 +1554,7 @@ const server = http.createServer(async (req, res) => {
       requireJson(req);
       return send(res, 200, await threadMeta.addVoiceCall(await readBody(req)));
     }
+    if (p === "/api/bot-map" && req.method === "GET") return send(res, 200, { edges: await botMap() }, { "cache-control": "no-store" });
     if (p === "/api/bots" && req.method === "GET") return send(res, 200, { bots: await listBots() }, { "cache-control": "no-store" });
     if (p === "/api/memory" && req.method === "GET") {
       const bot = await getBot(url.searchParams.get("slug") ?? "");

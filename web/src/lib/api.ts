@@ -56,7 +56,10 @@ export type RemoteRead = {
   items: RemoteItem[]; nextPosition: number | null; hasMore: boolean;
 };
 
+export type BotMapEdge = { from: string; to: string; count: number };
+
 export const api = {
+  botMap: (signal?: AbortSignal) => req<{ edges: BotMapEdge[] }>("/api/bot-map", { signal }),
   machines: (fresh = false) => req<{ machines: Machine[]; linksSupported: boolean }>(`/api/machines${fresh ? "?fresh=1" : ""}`),
   pairMachine: (environmentId: string, code: string, url?: string) => req<{ environmentId: string; baseUrl: string }>(`/api/machines/${encodeURIComponent(environmentId)}/pair`, { method: "POST", body: JSON.stringify({ code, ...(url ? { url } : {}) }) }),
   unpairMachine: (environmentId: string) => req<unknown>(`/api/machines/${encodeURIComponent(environmentId)}/pair`, { method: "DELETE" }),

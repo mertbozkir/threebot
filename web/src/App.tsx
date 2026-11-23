@@ -1,5 +1,6 @@
 import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import { Avatar } from "./components/Avatar";
+import { BotMap } from "./components/BotMap";
 import { Chat } from "./components/Chat";
 import { RemoteThread } from "./components/RemoteThread";
 import { ComputerOverlay } from "./components/Computer";
@@ -158,6 +159,8 @@ function Shell() {
       <main className={narrow ? bot || page ? "flex min-w-0 flex-1 overflow-hidden" : "hidden" : "flex min-w-0 flex-1 overflow-hidden rounded-tl-[14px] border-t border-l border-line"}>
         {page === "projects" ? (
           <ErrorBoundary key="projects"><ProjectsPage narrow={narrow} onBack={narrow ? () => history.back() : undefined} /></ErrorBoundary>
+        ) : page === "map" ? (
+          <BotMap narrow={narrow} onBack={narrow ? () => history.back() : () => useApp.setState({ page: null })} />
         ) : page === "room" && selectedRoom ? (
           <ErrorBoundary key={`room:${selectedRoom}`}><RoomView roomId={selectedRoom} onBack={narrow ? () => history.back() : undefined} /></ErrorBoundary>
         ) : bot ? (
