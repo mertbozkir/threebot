@@ -44,7 +44,7 @@ const bundle = await buildOnce({
       export { Modal } from ${JSON.stringify(`${src}components/ui.tsx`)};
       export { useApp } from ${JSON.stringify(`${src}store.ts`)};` : undefined,
     transform: (code, id) => isModule(id, `${src}components/Details.tsx`) ? { code: `${code}\nexport { AvatarDialog };`, map: null } : undefined }],
-  ssr: { noExternal: true }, build: { ssr: "virtual:settings-tests", write: false },
+  ssr: { noExternal: true }, build: { ssr: "virtual:settings-tests", write: false, rollupOptions: { output: { inlineDynamicImports: true } } },
 });
 const entry = entryChunk(bundle);
 assert.ok(entry);
@@ -111,24 +111,24 @@ test("failed save shows status and retains the permission rule draft", async () 
   handleRequest = (url, init) => init.method === "PUT"
     ? new Promise((resolve) => { rejectRequest = () => resolve(Response.json({ error: "Storage unavailable" }, { status: 503 })); })
     : Response.json(settings);
-  await render(); await click(button("Add Rule")); await input(document.querySelector("textarea"), "Ask before deleting"); await click(button("Add rule"));
+  await render(); await click(button("Add Rule")); await input(document.querySelector("#permission-rule"), "Ask before deleting"); await click(button("Add rule"));
   assert.match(document.querySelector('[role="status"]').textContent, /Saving/); assert.equal(document.querySelector("fieldset").disabled, true);
   await act(async () => rejectRequest()); assert.match(document.querySelector('[role="alert"]').textContent, /Storage unavailable/);
-  assert.equal(document.querySelector("textarea").value, "Ask before deleting"); assert.equal(document.querySelector("fieldset").disabled, false);
+  assert.equal(document.querySelector<HTMLInputElement>("#permission-rule")!.value, "Ask before deleting"); assert.equal(document.querySelector("fieldset").disabled, false);
 });
 
-test("permission add/edit/delete and Auto-Review save their values", async () => {
-  useApp.setState({ settingsPane: "permissions" }); await render(); await click(labeled("Auto-Review")); assert.equal(settings.autoReview, false);
-  await click(button("Add Rule")); await input(document.querySelector("textarea"), "Ask before deleting"); await click(button("Add rule"));
+test("permission add/edit/delete and Approvals save their values, editing inline", async () => {
+  useApp.setState({ settingsPane: "permissions" }); await render(); await select("Approvals", "full"); assert.equal(settings.autoReview, false);
+  await click(button("Add Rule")); await input(document.querySelector("#permission-rule"), "Ask before deleting"); assert.equal(document.querySelectorAll("[data-bot-modal]").length, 1); await click(button("Add rule"));
   assert.deepEqual(settings.rules.alwaysAsk, ["Ask before buying", "Ask before deleting"]);
-  await click(labeled("Edit rule")); await input(document.querySelector("textarea"), "Ask before spending"); await click(button("Add rule"));
+  await click(labeled("Edit rule")); await input(document.querySelector("#permission-rule"), "Ask before spending"); await click(button("Save"));
   assert.deepEqual(settings.rules.alwaysAsk, ["Ask before spending", "Ask before deleting"]);
   await click(labeled("Delete rule")); assert.deepEqual(settings.rules.alwaysAsk, ["Ask before deleting"]);
 });
 
 test("Escape cancels the rule editor without closing Settings", async () => {
-  useApp.setState({ settingsPane: "permissions", dialog: "settings" }); await render(); await click(button("Add Rule")); await key(document.querySelector("textarea"), "Escape");
-  assert.equal(document.querySelector("textarea"), null); assert.equal(useApp.getState().dialog, "settings"); assert.equal(requests.length, 0);
+  useApp.setState({ settingsPane: "permissions", dialog: "settings" }); await render(); await click(button("Add Rule")); await key(document.querySelector("#permission-rule"), "Escape");
+  assert.equal(document.querySelector("#permission-rule"), null); assert.equal(useApp.getState().dialog, "settings"); assert.equal(requests.length, 0);
 });
 
 test("Computer/Updates report metadata and retry a genuine failure", async () => {
@@ -680,14 +680,14 @@ test("Account and manual Time Zone open separate destinations, while automatic z
   await select("Time Zone", "Europe/Paris"); assert.equal(settings.timezone, "Europe/Paris");
 });
 
-test("Always Ask and Allow without Asking use their distinct native editor examples and Back cancels", async () => {
+test("Always Ask and Allow without Asking use their distinct editor examples and Cancel closes them", async () => {
   useApp.setState({ settingsPane: "permissions" }); await render();
   const add = () => [...document.querySelectorAll("button")].filter((button) => button.textContent.trim() === "Add Rule");
-  await click(add()[0]); assert.equal(document.querySelector("textarea").placeholder, "Purchases over $50");
-  await click(labeled("Back", [...document.querySelectorAll('[role="dialog"]')].at(-1)));
-  await click(add()[1]); assert.equal(document.querySelector("textarea").placeholder, "Emails to my team at acme.com"); assert.equal(button("Add rule").disabled, true);
-  await click(labeled("Back", [...document.querySelectorAll('[role="dialog"]')].at(-1)));
-  assert.equal(document.querySelectorAll('[role="dialog"]').length, 1); assert.equal(requests.length, 0);
+  await click(add()[0]); assert.equal(document.querySelector<HTMLInputElement>("#permission-rule")!.placeholder, "Purchases over $50");
+  await click(button("Cancel")); assert.equal(document.querySelector("#permission-rule"), null);
+  await click(add()[1]); assert.equal(document.querySelector<HTMLInputElement>("#permission-rule")!.placeholder, "Emails to my team at acme.com"); assert.equal(button("Add rule").disabled, true);
+  await click(button("Cancel"));
+  assert.equal(document.querySelector("#permission-rule"), null); assert.equal(document.querySelectorAll('[role="dialog"]').length, 1); assert.equal(requests.length, 0);
 });
 
 test("Sign Out uses the real logout route, suppresses duplicate clicks and retains Settings on failure", async () => {
@@ -759,6 +759,40 @@ test("Vault repeated phones and emails make primary, remove and save ordered val
   const saved = useApp.getState().vault[0];
   assert.deepEqual(saved.phones,["+15555550102"]); assert.equal(saved.phone,"+15555550102");
   assert.deepEqual(saved.emails,["second@example.invalid","first@example.invalid"]); assert.equal(saved.email,"second@example.invalid");
+});
+
+test("Computer pane (beta on): the Runs on choice and SSH host save through settings", async () => {
+  settings.beta = { projects: false, desktop: true };
+  handleRequest = async (url, init) => {
+    if (url === "/api/settings") { if (init.method === "PUT") settings = { ...settings, ...JSON.parse(init.body) }; return Response.json(settings); }
+    if (url.startsWith("/api/computer")) return Response.json({ where: "mac", state: "stopped", reason: null, runtime: null, image: { current: "img-7", running: "img-7", builtAt: null, latest: true } });
+    if (url.startsWith("/api/machines")) return Response.json({ machines: [{ environmentId: "local", label: "Test computer", local: true, status: "online", lastSeenAt: null, t3Version: "1.2.3", threebotVersion: "0.1.9", laptop: true, route: "local", paired: false, lastError: null }], linksSupported: true });
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  useApp.setState({ settingsPane: "computer", settings, machines: null }); await render();
+  assert.equal(labeled<HTMLSelectElement>("Runs on").value, "mac");
+  assert.match(document.body.textContent, /Bot's computer · Sleeping/);
+  await select("Runs on", "ssh");
+  const host = labeled<HTMLInputElement>("SSH host");
+  assert.equal(host.placeholder, "a host from your ~/.ssh/config");
+  await input(host, "build-box");
+  await click(button("Save"));
+  assert.deepEqual(settings.computer, { where: "ssh", host: "build-box" });
+  handleRequest = (url, init) => init.method === "PUT"
+    ? Response.json({ error: "computer.where must be \"mac\" or \"ssh\"" }, { status: 400 })
+    : Response.json(settings);
+  await input(labeled<HTMLInputElement>("SSH host"), "other-box");
+  await click(button("Save"));
+  assert.match(document.querySelector('[role="alert"]').textContent, /must be "mac" or "ssh"/);
+  assert.deepEqual(settings.computer, { where: "ssh", host: "build-box" });
+  handleRequest = async (url, init) => {
+    if (url === "/api/settings") { if (init.method === "PUT") settings = { ...settings, ...JSON.parse(init.body) }; return Response.json(settings); }
+    if (url.startsWith("/api/computer")) return Response.json({ where: "mac", state: "stopped", reason: null, runtime: null, image: { current: "img-7", running: "img-7", builtAt: null, latest: true } });
+    if (url.startsWith("/api/machines")) return Response.json({ machines: [], linksSupported: true });
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  await select("Runs on", "mac");
+  assert.deepEqual(settings.computer, { where: "mac" });
 });
 
 test("Bot CSV import retains ordered repeatable fields and skips malformed arrays", () => {

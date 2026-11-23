@@ -39,7 +39,7 @@ const bundle = await buildOnce({
       export { resetAssetCopies } from ${JSON.stringify(`${src}lib/assetCopies.ts`)};
       export { resetCacheForTest } from ${JSON.stringify(`${src}lib/threadCache.ts`)};` : undefined,
     transform: (code, id) => isModule(id, chat) ? { code: `${code}\nexport { EntryView, AttachmentList };`, map: null } : undefined,
-  }], ssr: { noExternal: true }, build: { ssr: "virtual:chat-actions-tests", write: false },
+  }], ssr: { noExternal: true }, build: { rollupOptions: { output: { inlineDynamicImports: true } }, ssr: "virtual:chat-actions-tests", write: false },
 });
 const entry = entryChunk(bundle);
 assert.ok(entry);

@@ -67,7 +67,6 @@ export function VaultPane() {
 
   return (
     <div className="vault-pane">
-      <h2 className="vault-inline-title mb-1 text-[18px] font-medium">Vault</h2>
       <p className="vault-inline-description mb-4 text-[12.5px] text-muted">Logins and contact info your Bots can type in for you.</p>
 
       <div className="vault-tabs scroll-thin -mx-1 mb-3 flex gap-1 overflow-x-auto px-1 pb-0.5">
@@ -107,7 +106,7 @@ export function VaultPane() {
         </div>
       </div>
 
-      {error && <div role="alert" className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line p-3 text-[13px] text-danger"><span className="min-w-0 flex-1 break-words">Couldn't load Vault: {error}</span><Pill variant="soft" onClick={() => retry((n) => n + 1)}>Retry</Pill></div>}
+      {error && <div role="alert" className="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-danger/10 p-3.5 text-[13px] text-danger"><span className="min-w-0 flex-1 break-words">Couldn't load Vault: {error}</span><Pill variant="soft" onClick={() => retry((n) => n + 1)}>Retry</Pill></div>}
       {tab === "payment" ? <div role="status" className="vault-payments-boundary"><h3>Payments aren’t available yet</h3><p>Vault supports logins and contact info. Saving cards requires a secure payment provider.</p></div> : items === null && !error ? (
         <div className="grid h-32 place-items-center text-muted">
           <Spinner />
@@ -115,9 +114,9 @@ export function VaultPane() {
       ) : items === null ? null : shown.length === 0 ? (
         <Empty icon={<KeyRound size={18} />}>{query ? "No matches." : "Nothing saved yet. Add a login or contact info with New item."}</Empty>
       ) : (
-        <div className="vault-items overflow-hidden rounded-2xl border border-line bg-card/50">
+        <div className="vault-items overflow-hidden rounded-[18px] border border-line bg-card">
           {shown.map((i) => (
-            <button key={i.id} onClick={() => setSheet({ kind: "view", id: i.id })} className="flex w-full items-center gap-3 border-b border-line px-3.5 py-2.5 text-left last:border-0 hover:bg-hover">
+            <button key={i.id} onClick={() => setSheet({ kind: "view", id: i.id })} className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-hover">
               <ItemIcon item={i} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13.5px]">{i.title}</span>
@@ -352,7 +351,7 @@ export function Field({ label, desktopLabel, children, hint }: { label: string; 
   );
 }
 
-export const inputClass = "h-9 w-full min-w-0 rounded-lg border border-line bg-elevated px-2.5 text-[13.5px] outline-none placeholder:text-faint focus:border-line-strong";
+export const inputClass = "settings-input w-full placeholder:text-faint";
 
 export function PasswordInput({ value, onChange, placeholder, autoFocus }: { value: string; onChange: (v: string) => void; placeholder?: string; autoFocus?: boolean }) {
   const [show, setShow] = useState(false);

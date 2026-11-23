@@ -26,7 +26,7 @@ const bundle = await buildOnce({
       export { createRoot } from "react-dom/client";
       export { MemoryTab } from ${JSON.stringify(`${src}components/Memory.tsx`)};
       export { useApp } from ${JSON.stringify(`${src}store.ts`)};` : undefined }],
-  ssr: { noExternal: true }, build: { ssr: "virtual:memory-tab-tests", write: false },
+  ssr: { noExternal: true }, build: { rollupOptions: { output: { inlineDynamicImports: true } }, ssr: "virtual:memory-tab-tests", write: false },
 });
 const testDir = await mkdtemp(join(tmpdir(), "bot-memory-tab-"));
 const testEntry = join(testDir, "components.mjs");

@@ -25,7 +25,7 @@ const bundle = await buildOnce({
       export { useApp } from ${JSON.stringify(storePath)};
       export { WorkspaceFileContext } from ${JSON.stringify(workspacePath)};
       export { createElement } from "react";
-      export { renderToStaticMarkup } from "react-dom/server";
+      export { renderToStaticMarkup, renderToReadableStream } from "react-dom/server";
     ` : undefined,
     // Exercise the real components without making their implementation public app APIs.
     transform: (code, id) => isModule(id, chatPath)
@@ -33,7 +33,7 @@ const bundle = await buildOnce({
       : undefined,
   }],
   ssr: { noExternal: true },
-  build: { ssr: "virtual:mobile-chat-test", write: false },
+  build: { rollupOptions: { output: { inlineDynamicImports: true } }, ssr: "virtual:mobile-chat-test", write: false },
 });
 const entry = entryChunk(bundle);
 assert.ok(entry);
@@ -55,7 +55,7 @@ try {
 const {
   composerFocusBehavior, MOBILE_CHAT_QUERY, splitBubbles, takeAttachmentFiles,
   Composer, ComposerActions, BotBubble, AttachmentList, useApp, WorkspaceFileContext,
-  createElement: h, renderToStaticMarkup: render,
+  createElement: h, renderToStaticMarkup: render, renderToReadableStream,
 } = loaded;
 
 function textarea(readOnly) {
@@ -251,12 +251,14 @@ test("short prose still groups into bubbles, keeping introductions and lists tog
   assert.deepEqual(splitBubbles(many), [many], "long stacks keep the existing single-bubble limit");
 });
 
-test("display math and both code fence styles survive bubble grouping verbatim", () => {
+test("display math and both code fence styles survive bubble grouping verbatim", async () => {
   useApp.setState({ bots: {} });
   for (const [open, close] of [["$$", "$$"], ["\\[", "\\]"]]) {
     const text = `Before.\n\n${open}\nx^2 +\n\ny^2\n${close}\n\nAfter.`;
     assert.deepEqual(splitBubbles(text), [text], `${open} math keeps its internal blank lines`);
-    const markup = render(h(BotBubble, { text }));
+    const stream = await renderToReadableStream(h(BotBubble, { text }));
+    await stream.allReady;
+    const markup = await new Response(stream).text();
     assert.equal((markup.match(/rich-math-display/g) ?? []).length, 1, `${open} reaches the real math parser intact`);
     assert.match(markup, /<math/);
     assert.ok(markup.includes("Before.") && markup.includes("After."));

@@ -4,14 +4,14 @@
 import fs from "node:fs/promises";
 
 /** The beta switches, each one on or off. */
-/** projects: the Projects board. settleBotThreads: keep Bot threads settled in T3 Code's sidebar. */
-export type BetaSettings = { projects: boolean; settleBotThreads: boolean };
+/** projects: the Projects board. settleBotThreads: keep Bot threads settled in T3 Code's sidebar. desktop: the Bots' computer. */
+export type BetaSettings = { projects: boolean; settleBotThreads: boolean; desktop: boolean };
 /** Saved switches as read from settings.json: anything, until `betaSettings` cleans it up. */
 export type SavedBeta = { readonly [key: string]: unknown } | null | undefined;
 /** settings.json as saved, with the `beta` switches somewhere inside. */
 export type SavedSettings = { beta?: SavedBeta; [key: string]: unknown };
 
-export const BETA_DEFAULTS: Readonly<BetaSettings> = Object.freeze({ projects: false, settleBotThreads: false });
+export const BETA_DEFAULTS: Readonly<BetaSettings> = Object.freeze({ projects: false, settleBotThreads: false, desktop: false });
 
 /** The saved switches with defaults filled in. Unknown keys and non-booleans are dropped. */
 export function betaSettings(saved: SavedBeta): BetaSettings {
